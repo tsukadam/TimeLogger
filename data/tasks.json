@@ -1,0 +1,58 @@
+{
+    "folders": [
+        {
+            "id": "386f453c-5312-4e39-8536-5ec1a4f6faed",
+            "name": "test",
+            "color": "#e08a3c",
+            "sortOrder": 0,
+            "createdAt": "2026-07-14T19:16:13+09:00",
+            "updatedAt": "2026-07-14T19:16:13+09:00"
+        },
+        {
+            "id": "082c0ac3-2ed0-4990-9e17-75148feda0c3",
+            "name": "test2",
+            "color": "#5bb98c",
+            "sortOrder": 1,
+            "createdAt": "2026-07-14T19:16:31+09:00",
+            "updatedAt": "2026-07-14T19:16:31+09:00"
+        },
+        {
+            "id": "c187c8c1-2a17-46ac-b4b0-87625d33f4f2",
+            "name": "テスト",
+            "color": "#5b8de2",
+            "sortOrder": 2,
+            "createdAt": "2026-07-14T19:56:07+09:00",
+            "updatedAt": "2026-07-14T19:56:07+09:00"
+        }
+    ],
+    "tasks": [
+        {
+            "id": "c1175b41-7e9e-4f3a-bba8-e90705db67d1",
+            "folderId": "386f453c-5312-4e39-8536-5ec1a4f6faed",
+            "name": "action",
+            "color": "#e08a3c",
+            "sortOrder": 0,
+            "createdAt": "2026-07-14T19:16:24+09:00",
+            "updatedAt": "2026-07-14T19:16:24+09:00"
+        },
+        {
+            "id": "8854ae87-aba5-4ae0-8cf2-8b238d00e76c",
+            "folderId": "082c0ac3-2ed0-4990-9e17-75148feda0c3",
+            "name": "action2",
+            "color": "#5bb98c",
+            "sortOrder": 0,
+            "createdAt": "2026-07-14T19:16:36+09:00",
+            "updatedAt": "2026-07-14T19:16:36+09:00"
+        },
+        {
+            "id": "ad61a0bf-f7d6-4276-8540-bc3c943c824a",
+            "folderId": "386f453c-5312-4e39-8536-5ec1a4f6faed",
+            "name": "テスート",
+            "color": "#c45c9a",
+            "sortOrder": 1,
+            "createdAt": "2026-07-14T19:56:23+09:00",
+            "updatedAt": "2026-07-14T19:56:23+09:00"
+        }
+    ],
+    "updatedAt": "2026-07-14T19:56:23+09:00"
+}

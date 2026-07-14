@@ -1,0 +1,70 @@
+.root {
+  position: relative;
+}
+
+.trigger,
+.option,
+.optionActive {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  color: var(--fg);
+}
+
+.trigger {
+  justify-content: flex-start;
+}
+
+.chevron {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  max-height: 220px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.option,
+.optionActive {
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.option:hover,
+.optionActive {
+  background: var(--panel-2);
+}
+
+.optionActive {
+  outline: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
