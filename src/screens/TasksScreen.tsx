@@ -1,21 +1,69 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { FolderIcon } from '../components/FolderIcon'
 import { FolderSelect } from '../components/FolderSelect'
+import { FOLDER_PALETTE, TASK_BASE_CELL, findTaskColorPos, taskColorGrid } from '../lib/color'
 import {
-  DEFAULT_PALETTE,
-  FOLDER_PALETTE,
-  paletteCountForWidth,
-  relatedColorsFrom,
-} from '../lib/color'
-import {
+  durationLabel,
   formatDurationHms,
   overlapSecondsOnDay,
   todayKey,
 } from '../lib/time'
 import { useStore } from '../state/Store'
+import type { Folder, Task } from '../types'
 import styles from './TasksScreen.module.css'
 
 type AddKind = 'folder' | 'task'
+type PalettePos =
+  | { kind: 'task'; row: number; col: number }
+  | { kind: 'folder'; index: number }
+
+type Sheet =
+  | { type: 'closed' }
+  | { type: 'add' }
+  | { type: 'edit-folder'; id: string }
+  | { type: 'edit-task'; id: string }
+
+function ColorPickerButton({
+  fill,
+  selected,
+  onPick,
+}: {
+  fill: string | null
+  selected: boolean
+  onPick: (c: string) => void
+}) {
+  const filled = fill !== null && /^#[0-9a-fA-F]{6}$/.test(fill)
+  return (
+    <label
+      className={[
+        styles.pickerWrap,
+        filled ? styles.pickerFilled : styles.pickerEmpty,
+        selected ? styles.colorActive : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      title="自由に選ぶ"
+      style={filled ? { background: fill } : undefined}
+      onPointerDown={() => {
+        if (fill) onPick(fill)
+      }}
+    >
+      <span
+        className={filled ? styles.pickerFaceOnColor : styles.pickerFace}
+        aria-hidden
+      >
+        ＋
+      </span>
+      <input
+        type="color"
+        className={styles.pickerInput}
+        value={filled ? fill : '#e08a3c'}
+        onChange={(e) => onPick(e.target.value)}
+        aria-label="カラーピッカー"
+      />
+    </label>
+  )
+}
 
 export function TasksScreen() {
   const {
@@ -29,18 +77,29 @@ export function TasksScreen() {
     clearError,
     addFolder,
     addTask,
+    updateFolder,
+    updateTask,
     startTask,
     stopCurrent,
+    deleteFolder,
+    deleteTask,
   } = useStore()
 
   const [now, setNow] = useState(() => Date.now())
-  const [addOpen, setAddOpen] = useState(false)
+  const [sheet, setSheet] = useState<Sheet>({ type: 'closed' })
   const [addKind, setAddKind] = useState<AddKind>('folder')
   const [name, setName] = useState('')
-  const [color, setColor] = useState(DEFAULT_PALETTE[0]!)
+  const [color, setColor] = useState(FOLDER_PALETTE[0]!)
   const [folderId, setFolderId] = useState('')
-  const [paletteSlots, setPaletteSlots] = useState(8)
-  const colorsRef = useRef<HTMLDivElement | null>(null)
+  const [pickerFill, setPickerFill] = useState<string | null>(null)
+  const [colorFrom, setColorFrom] = useState<'palette' | 'picker'>('palette')
+  const [palettePos, setPalettePos] = useState<PalettePos | null>({
+    kind: 'folder',
+    index: 0,
+  })
+
+  const sheetOpen = sheet.type !== 'closed'
+  const isEdit = sheet.type === 'edit-folder' || sheet.type === 'edit-task'
 
   useEffect(() => {
     if (!current) return
@@ -49,32 +108,39 @@ export function TasksScreen() {
   }, [current])
 
   useEffect(() => {
+    if (!sheetOpen) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [sheetOpen])
+
+  useEffect(() => {
     if (!folderId && folders[0]) setFolderId(folders[0].id)
   }, [folderId, folders])
-
-  useLayoutEffect(() => {
-    if (!addOpen) return
-    const el = colorsRef.current
-    if (!el) return
-    setPaletteSlots(paletteCountForWidth(el.clientWidth))
-  }, [addOpen, addKind])
 
   const selectedFolder = useMemo(
     () => folders.find((f) => f.id === folderId) ?? null,
     [folderId, folders],
   )
 
-  const palette = useMemo(() => {
-    if (addKind === 'folder') {
-      const base = FOLDER_PALETTE
-      if (base.length >= paletteSlots) return base.slice(0, paletteSlots)
-      return [...base, ...relatedColorsFrom(base[0]!, paletteSlots - base.length)]
+  const taskGrid = useMemo(() => {
+    if (!selectedFolder) return null
+    return taskColorGrid(selectedFolder.color)
+  }, [selectedFolder])
+
+  useEffect(() => {
+    if (!sheetOpen || addKind !== 'task' || !taskGrid) return
+    if (colorFrom === 'picker') {
+      if (pickerFill) setColor(pickerFill)
+      return
     }
-    if (selectedFolder) {
-      return relatedColorsFrom(selectedFolder.color, paletteSlots)
+    if (palettePos?.kind === 'task') {
+      const next = taskGrid[palettePos.row]?.[palettePos.col]
+      if (next) setColor(next)
     }
-    return relatedColorsFrom(DEFAULT_PALETTE[0]!, paletteSlots)
-  }, [addKind, selectedFolder, paletteSlots])
+  }, [sheetOpen, addKind, taskGrid, colorFrom, pickerFill, palettePos])
 
   const day = todayKey(new Date(now))
 
@@ -95,36 +161,139 @@ export function TasksScreen() {
     }))
   }, [folders, tasks])
 
+  function closeSheet() {
+    setSheet({ type: 'closed' })
+    setName('')
+  }
+
   function openAdd() {
     const kind: AddKind = folders.length === 0 ? 'folder' : 'task'
     setAddKind(kind)
     setName('')
     setFolderId(folders[0]?.id ?? '')
+    setPickerFill(null)
+    setColorFrom('palette')
     if (kind === 'folder') {
+      setPalettePos({ kind: 'folder', index: 0 })
       setColor(FOLDER_PALETTE[0]!)
     } else {
-      const base = folders[0]?.color
-      setColor(base ? relatedColorsFrom(base, 1)[0]! : FOLDER_PALETTE[0]!)
+      setPalettePos({
+        kind: 'task',
+        row: TASK_BASE_CELL.row,
+        col: TASK_BASE_CELL.col,
+      })
+      setColor(folders[0]?.color ?? FOLDER_PALETTE[0]!)
     }
-    setAddOpen(true)
+    setSheet({ type: 'add' })
   }
 
-  async function submitAdd() {
+  function openEditFolder(folder: Folder) {
+    setAddKind('folder')
+    setName(folder.name)
+    setColor(folder.color)
+    setPickerFill(null)
+    const idx = FOLDER_PALETTE.findIndex(
+      (c) => c.toLowerCase() === folder.color.toLowerCase(),
+    )
+    if (idx >= 0) {
+      setColorFrom('palette')
+      setPalettePos({ kind: 'folder', index: idx })
+    } else {
+      setColorFrom('picker')
+      setPickerFill(folder.color)
+      setPalettePos({ kind: 'folder', index: 0 })
+    }
+    setSheet({ type: 'edit-folder', id: folder.id })
+  }
+
+  function openEditTask(task: Task) {
+    setAddKind('task')
+    setName(task.name)
+    setFolderId(task.folderId)
+    setColor(task.color)
+    const folder = folders.find((f) => f.id === task.folderId)
+    const pos = folder ? findTaskColorPos(folder.color, task.color) : null
+    if (pos) {
+      setColorFrom('palette')
+      setPalettePos({ kind: 'task', row: pos.row, col: pos.col })
+      setPickerFill(null)
+    } else {
+      setColorFrom('picker')
+      setPickerFill(task.color)
+      setPalettePos({
+        kind: 'task',
+        row: TASK_BASE_CELL.row,
+        col: TASK_BASE_CELL.col,
+      })
+    }
+    setSheet({ type: 'edit-task', id: task.id })
+  }
+
+  function selectPaletteColor(c: string, pos: PalettePos) {
+    setColor(c)
+    setColorFrom('palette')
+    setPalettePos(pos)
+  }
+
+  function pickCustomColor(c: string) {
+    setColor(c)
+    setPickerFill(c)
+    setColorFrom('picker')
+  }
+
+  async function submitSheet() {
     const trimmed = name.trim()
     if (!trimmed) return
     try {
-      if (addKind === 'folder') {
-        await addFolder(trimmed, color)
-      } else {
+      if (sheet.type === 'add') {
+        if (addKind === 'folder') await addFolder(trimmed, color)
+        else {
+          if (!folderId) return
+          await addTask(folderId, trimmed, color)
+        }
+      } else if (sheet.type === 'edit-folder') {
+        await updateFolder(sheet.id, { name: trimmed, color })
+      } else if (sheet.type === 'edit-task') {
         if (!folderId) return
-        await addTask(folderId, trimmed, color)
+        await updateTask(sheet.id, {
+          name: trimmed,
+          color,
+          folderId,
+        })
       }
-      setAddOpen(false)
-      setName('')
+      closeSheet()
     } catch {
       /* Store が表示 */
     }
   }
+
+  async function submitDelete() {
+    if (sheet.type === 'edit-folder') {
+      if (tasks.some((t) => t.folderId === sheet.id)) return
+      if (!window.confirm('このフォルダを削除しますか？')) return
+      try {
+        await deleteFolder(sheet.id)
+        closeSheet()
+      } catch {
+        /* Store が表示 */
+      }
+      return
+    }
+    if (sheet.type === 'edit-task') {
+      if (!window.confirm('このタスクを削除しますか？（過去の記録は残ります）'))
+        return
+      try {
+        await deleteTask(sheet.id)
+        closeSheet()
+      } catch {
+        /* Store が表示 */
+      }
+    }
+  }
+
+  const folderDeleteBlocked =
+    sheet.type === 'edit-folder' &&
+    tasks.some((t) => t.folderId === sheet.id)
 
   if (loading) {
     return <p className={styles.status}>読み込み中…</p>
@@ -144,10 +313,14 @@ export function TasksScreen() {
       {byFolder.map(({ folder, tasks: folderTasks }, index) => (
         <section key={folder.id} className={styles.folderSection}>
           {index > 0 && <div className={styles.divider} />}
-          <div className={styles.folderHead}>
+          <button
+            type="button"
+            className={styles.folderHead}
+            onClick={() => openEditFolder(folder)}
+          >
             <FolderIcon color={folder.color} size={16} />
             <h2 className={styles.folderName}>{folder.name}</h2>
-          </div>
+          </button>
 
           <ul className={styles.taskList}>
             {folderTasks.map((task) => {
@@ -160,7 +333,8 @@ export function TasksScreen() {
                     className={running ? styles.recStop : styles.recStart}
                     disabled={busy}
                     aria-label={running ? '記録停止' : '記録開始'}
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation()
                       if (running) void stopCurrent()
                       else void startTask(task.id)
                     }}
@@ -168,15 +342,15 @@ export function TasksScreen() {
                     <span className={running ? styles.square : styles.triangle} />
                     {running && current && (
                       <span className={styles.elapsedInBtn}>
-                        {formatDurationHms(
-                          Math.floor(
-                            (now - new Date(current.startedAt).getTime()) / 1000,
-                          ),
-                        )}
+                        {durationLabel(current.startedAt, null, now)}
                       </span>
                     )}
                   </button>
-                  <div className={styles.taskCard}>
+                  <button
+                    type="button"
+                    className={styles.taskCard}
+                    onClick={() => openEditTask(task)}
+                  >
                     <span
                       className={styles.swatchDot}
                       style={{ background: task.color }}
@@ -190,7 +364,7 @@ export function TasksScreen() {
                         {formatDurationHms(todaySec)}
                       </div>
                     )}
-                  </div>
+                  </button>
                 </li>
               )
             })}
@@ -198,49 +372,76 @@ export function TasksScreen() {
         </section>
       ))}
 
-      {!addOpen && (
-        <div className={styles.addInline}>
-          {byFolder.length === 0 && (
-            <p className={styles.hint}>＋ からフォルダを追加</p>
-          )}
-          <button
-            type="button"
-            className={styles.plus}
-            aria-label="追加"
-            disabled={busy}
-            onClick={openAdd}
-          >
-            ＋
-          </button>
-        </div>
+      {byFolder.length === 0 && (
+        <p className={styles.hint}>＋ からフォルダを追加</p>
       )}
 
-      {addOpen && (
-        <div className={styles.sheet} role="dialog" aria-label="追加">
-          <div className={styles.kindRow}>
-            <button
-              type="button"
-              className={addKind === 'folder' ? styles.kindActive : styles.kind}
-              onClick={() => {
-                setAddKind('folder')
-                setColor(FOLDER_PALETTE[0]!)
-              }}
-            >
-              フォルダ
-            </button>
-            <button
-              type="button"
-              className={addKind === 'task' ? styles.kindActive : styles.kind}
-              disabled={folders.length === 0}
-              onClick={() => {
-                setAddKind('task')
-                const f = folders.find((x) => x.id === folderId) ?? folders[0]
-                if (f) setColor(relatedColorsFrom(f.color, 1)[0]!)
-              }}
-            >
-              タスク
-            </button>
-          </div>
+      <div className={styles.addBar}>
+        <button
+          type="button"
+          className={styles.plus}
+          aria-label="追加"
+          disabled={busy}
+          onClick={openAdd}
+        >
+          ＋
+        </button>
+      </div>
+
+      {sheetOpen && (
+        <div className={styles.modalRoot}>
+          <div className={styles.modalBackdrop} aria-hidden />
+          <div
+            className={styles.sheet}
+            role="dialog"
+            aria-modal="true"
+            aria-label={isEdit ? '編集' : '追加'}
+          >
+          {!isEdit && (
+            <div className={styles.kindRow}>
+              <button
+                type="button"
+                className={addKind === 'folder' ? styles.kindActive : styles.kind}
+                onClick={() => {
+                  setAddKind('folder')
+                  selectPaletteColor(FOLDER_PALETTE[0]!, {
+                    kind: 'folder',
+                    index: 0,
+                  })
+                }}
+              >
+                フォルダ
+              </button>
+              <button
+                type="button"
+                className={addKind === 'task' ? styles.kindActive : styles.kind}
+                disabled={folders.length === 0}
+                onClick={() => {
+                  setAddKind('task')
+                  if (colorFrom === 'picker' && pickerFill) {
+                    setColor(pickerFill)
+                    return
+                  }
+                  setColorFrom('palette')
+                  setPalettePos({
+                    kind: 'task',
+                    row: TASK_BASE_CELL.row,
+                    col: TASK_BASE_CELL.col,
+                  })
+                  const f = folders.find((x) => x.id === folderId) ?? folders[0]
+                  if (f) setColor(f.color)
+                }}
+              >
+                タスク
+              </button>
+            </div>
+          )}
+
+          {isEdit && (
+            <h2 className={styles.sheetTitle}>
+              {sheet.type === 'edit-folder' ? 'フォルダを編集' : 'タスクを編集'}
+            </h2>
+          )}
 
           {addKind === 'task' && (
             <div className={styles.field}>
@@ -249,11 +450,7 @@ export function TasksScreen() {
                 folders={folders}
                 value={folderId}
                 disabled={busy}
-                onChange={(id) => {
-                  setFolderId(id)
-                  const f = folders.find((x) => x.id === id)
-                  if (f) setColor(relatedColorsFrom(f.color, 1)[0]!)
-                }}
+                onChange={(id) => setFolderId(id)}
               />
             </div>
           )}
@@ -271,49 +468,127 @@ export function TasksScreen() {
 
           <div className={styles.field}>
             <span>色</span>
-            <div className={styles.colors} ref={colorsRef}>
-              {palette.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  className={color === c ? styles.colorActive : styles.color}
-                  style={{ background: c }}
-                  aria-label={c}
-                  onClick={() => setColor(c)}
+            {addKind === 'folder' ? (
+              <div className={styles.colors}>
+                {FOLDER_PALETTE.map((c, index) => {
+                  const selected =
+                    colorFrom === 'palette' &&
+                    palettePos?.kind === 'folder' &&
+                    palettePos.index === index
+                  return (
+                    <button
+                      key={c}
+                      type="button"
+                      className={selected ? styles.colorActive : styles.color}
+                      style={{ background: c }}
+                      aria-label={c}
+                      onClick={() =>
+                        selectPaletteColor(c, { kind: 'folder', index })
+                      }
+                    />
+                  )
+                })}
+                <ColorPickerButton
+                  fill={pickerFill}
+                  selected={colorFrom === 'picker'}
+                  onPick={pickCustomColor}
                 />
-              ))}
-              <label className={styles.pickerWrap} title="自由に選ぶ">
-                <span className={styles.pickerFace} aria-hidden>
-                  ＋
-                </span>
-                <input
-                  type="color"
-                  className={styles.pickerInput}
-                  value={/^#[0-9a-fA-F]{6}$/.test(color) ? color : '#e08a3c'}
-                  onChange={(e) => setColor(e.target.value)}
-                  aria-label="カラーピッカー"
-                />
-              </label>
-            </div>
+              </div>
+            ) : (
+              taskGrid && (
+                <div className={styles.colorGridWrap}>
+                  <div
+                    className={styles.colorGrid}
+                    role="listbox"
+                    aria-label="タスク色"
+                  >
+                    {taskGrid.flatMap((row, ri) =>
+                      row.map((c, ci) => {
+                        const isBase =
+                          ri === TASK_BASE_CELL.row && ci === TASK_BASE_CELL.col
+                        const selected =
+                          colorFrom === 'palette' &&
+                          palettePos?.kind === 'task' &&
+                          palettePos.row === ri &&
+                          palettePos.col === ci
+                        return (
+                          <button
+                            key={`${ri}-${ci}-${c}`}
+                            type="button"
+                            role="option"
+                            aria-selected={selected}
+                            aria-label={isBase ? `フォルダ色 ${c}` : c}
+                            className={
+                              selected
+                                ? `${styles.colorActive} ${styles.colorSwatch}`
+                                : styles.colorSwatch
+                            }
+                            style={{ background: c }}
+                            onClick={() =>
+                              selectPaletteColor(c, {
+                                kind: 'task',
+                                row: ri,
+                                col: ci,
+                              })
+                            }
+                          >
+                            {isBase && (
+                              <FolderIcon
+                                color="#fff"
+                                size={14}
+                                className={styles.baseFolderMark}
+                              />
+                            )}
+                          </button>
+                        )
+                      }),
+                    )}
+                  </div>
+                  <ColorPickerButton
+                    fill={pickerFill}
+                    selected={colorFrom === 'picker'}
+                    onPick={pickCustomColor}
+                  />
+                </div>
+              )
+            )}
           </div>
 
           <div className={styles.sheetActions}>
-            <button
-              type="button"
-              className={styles.ghost}
-              disabled={busy}
-              onClick={() => setAddOpen(false)}
-            >
-              キャンセル
-            </button>
-            <button
-              type="button"
-              className={styles.primary}
-              disabled={busy || !name.trim() || (addKind === 'task' && !folderId)}
-              onClick={() => void submitAdd()}
-            >
-              追加
-            </button>
+            {isEdit && (
+              <button
+                type="button"
+                className={styles.danger}
+                disabled={busy || folderDeleteBlocked}
+                title={
+                  folderDeleteBlocked
+                    ? 'タスクがあるフォルダは削除できません'
+                    : undefined
+                }
+                onClick={() => void submitDelete()}
+              >
+                削除
+              </button>
+            )}
+            <div className={styles.sheetActionsRight}>
+              <button
+                type="button"
+                className={styles.ghost}
+                disabled={busy}
+                onClick={closeSheet}
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                className={styles.primary}
+                disabled={busy || !name.trim() || (addKind === 'task' && !folderId)}
+                onClick={() => void submitSheet()}
+              >
+                {isEdit ? '保存' : '追加'}
+              </button>
+            </div>
+          </div>
           </div>
         </div>
       )}

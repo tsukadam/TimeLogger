@@ -2,6 +2,8 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* 下部固定バーぶんの逃げ */
+  padding-bottom: 76px;
 }
 
 .status,
@@ -47,6 +49,12 @@
   align-items: center;
   gap: 8px;
   padding: 2px 2px 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+  color: inherit;
 }
 
 .folderName {
@@ -54,6 +62,12 @@
   font-size: 0.95rem;
   font-weight: 650;
   color: var(--muted);
+}
+
+.sheetTitle {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
 }
 
 .taskList {
@@ -73,18 +87,29 @@
 
 .recStart,
 .recStop {
+  position: relative;
   width: 56px;
   height: 56px;
   flex-shrink: 0;
   border-radius: 8px;
   border: 1px solid var(--line);
   background: var(--panel);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  padding: 4px 2px;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.recStart:hover,
+.recStart:active,
+.recStart:focus,
+.recStart:focus-visible,
+.recStop:hover,
+.recStop:active,
+.recStop:focus,
+.recStop:focus-visible {
+  background: var(--panel);
+  filter: none;
+  opacity: 1;
+  outline: none;
 }
 
 .recStart {
@@ -96,29 +121,40 @@
 }
 
 .triangle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
   width: 0;
   height: 0;
   border-style: solid;
   border-width: 7px 0 7px 12px;
   border-color: transparent transparent transparent var(--ok);
-  margin-left: 2px;
+  transform: translate(-35%, -50%);
 }
 
 .square {
+  position: absolute;
+  left: 50%;
+  top: 50%;
   width: 12px;
   height: 12px;
-  background: #ffb4b4;
+  background: var(--danger);
   border-radius: 2px;
+  transform: translate(-50%, -50%);
 }
 
 .elapsedInBtn {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  bottom: 3px;
   color: #fff;
-  font-size: 0.58rem;
+  font-size: 0.55rem;
   line-height: 1.05;
   font-variant-numeric: tabular-nums;
   text-align: center;
-  max-width: 52px;
   word-break: break-all;
+  pointer-events: none;
 }
 
 .taskCard {
@@ -132,6 +168,9 @@
   background: var(--panel);
   border: 1px solid var(--line);
   min-height: 56px;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
 }
 
 .swatchDot {
@@ -157,27 +196,55 @@
   font-variant-numeric: tabular-nums;
 }
 
-.addInline {
+.addBar {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(100%, 560px);
+  z-index: 50;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 0 4px;
+  justify-content: center;
+  padding: 8px 16px calc(8px + var(--safe-bottom));
+  background: var(--bg);
+  border-top: 1px solid var(--line);
 }
 
 .plus {
-  width: 56px;
-  height: 56px;
+  width: 48px;
+  height: 48px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--panel);
-  font-size: 1.6rem;
+  font-size: 1.5rem;
   line-height: 1;
   color: var(--fg);
 }
 
+.plus:disabled {
+  opacity: 0.45;
+}
+
+.modalRoot {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(12px + var(--safe-top)) 16px calc(12px + var(--safe-bottom));
+}
+
+.modalBackdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.58);
+}
+
 .sheet {
-  margin-top: 4px;
+  position: relative;
+  z-index: 1;
+  margin: 0;
   padding: 14px;
   border-radius: 12px;
   background: var(--panel);
@@ -185,6 +252,11 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* 色グリッド12マス＋右のはみ出し＋を収める幅 */
+  width: min(100%, 520px);
+  max-height: min(86dvh, 720px);
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .kindRow {
@@ -223,13 +295,44 @@
   width: 100%;
 }
 
+/* 28px 固定・左詰め。右に余白を残し、＋がはみ出る */
+.colorGridWrap {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  /* 12×28 + 11×8gap = 424px の右に＋用余白 */
+  padding-right: 36px;
+}
+
+.colorGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  /* 1行あたり12マス。狭い画面では改行して崩れるが個人用途で可 */
+  width: calc(12 * 28px + 11 * 8px);
+  max-width: 100%;
+}
+
 .color,
-.colorActive {
+.colorActive,
+.colorSwatch {
   width: 28px;
   height: 28px;
+  flex: 0 0 28px;
   border-radius: 999px;
   border: 2px solid transparent;
   padding: 0;
+}
+
+.colorSwatch {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.baseFolderMark {
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.65));
+  pointer-events: none;
 }
 
 .colorActive {
@@ -237,25 +340,57 @@
   box-shadow: 0 0 0 2px var(--bg);
 }
 
+.colorGridWrap .pickerWrap {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+}
+
 .pickerWrap {
   position: relative;
   width: 28px;
   height: 28px;
+  flex: 0 0 28px;
   border-radius: 999px;
   overflow: hidden;
-  border: 1px dashed var(--muted);
   cursor: pointer;
+  box-sizing: border-box;
 }
 
-.pickerFace {
+.pickerEmpty {
+  border: 2px dashed var(--muted);
+  background: var(--panel-2);
+}
+
+.pickerFilled {
+  border: 2px solid transparent;
+}
+
+.pickerWrap.colorActive {
+  border-color: var(--fg);
+  border-style: solid;
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+.pickerFace,
+.pickerFaceOnColor {
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
   font-size: 0.95rem;
-  color: var(--muted);
-  background: var(--panel-2);
   pointer-events: none;
+}
+
+.pickerFace {
+  color: var(--muted);
+  background: transparent;
+}
+
+.pickerFaceOnColor {
+  color: #fff;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.75);
+  background: transparent;
 }
 
 .pickerInput {
@@ -271,12 +406,20 @@
 
 .sheetActions {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
 }
 
+.sheetActionsRight {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
 .ghost,
-.primary {
+.primary,
+.danger {
   border-radius: 8px;
   padding: 8px 14px;
   border: 1px solid var(--line);
@@ -287,4 +430,14 @@
   border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
   color: var(--accent);
   font-weight: 650;
+}
+
+.danger {
+  border-color: color-mix(in srgb, var(--danger) 50%, var(--line));
+  color: #ffd4d4;
+  background: color-mix(in srgb, var(--danger) 14%, var(--panel-2));
+}
+
+.danger:disabled {
+  opacity: 0.45;
 }

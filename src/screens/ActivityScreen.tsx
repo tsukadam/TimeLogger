@@ -1,22 +1,36 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FolderIcon } from '../components/FolderIcon'
+import { FolderSelect } from '../components/FolderSelect'
+import { TaskSelect } from '../components/TaskSelect'
+import { TimeField } from '../components/TimeField'
 import {
   dateKey,
+  dateTimeInputToIso,
   durationLabel,
   formatDateDivider,
   formatEventRange,
+  isoToDateInput,
+  isoToTimeInput,
+  nowIso,
 } from '../lib/time'
 import { useStore } from '../state/Store'
 import type { Event } from '../types'
 import styles from './ActivityScreen.module.css'
 
 const PAGE = 50
+const HOLE_WINDOW_MS = 12 * 60 * 60 * 1000
+const HOLE_MIN_MS = 60 * 1000
 
 type DayGroup = {
   key: string
   label: string
   events: Event[]
 }
+
+type SheetState =
+  | { type: 'closed' }
+  | { type: 'edit'; id: string }
+  | { type: 'add' }
 
 function findScrollParent(el: HTMLElement | null): Element | null {
   let cur: HTMLElement | null = el
@@ -28,14 +42,117 @@ function findScrollParent(el: HTMLElement | null): Element | null {
   return null
 }
 
+/**
+ * 直近12時間の記録の「穴」（1分以上の空白）のうち最古を返す。
+ * 無ければ null（＝押した時点の時刻をデフォルトにする）。
+ */
+function findOldestHole(
+  events: Event[],
+  nowMs: number,
+): { start: number; end: number } | null {
+  const windowStart = nowMs - HOLE_WINDOW_MS
+  const intervals = events
+    .map((e) => ({
+      s: new Date(e.startedAt).getTime(),
+      e: e.endedAt ? new Date(e.endedAt).getTime() : nowMs,
+    }))
+    .filter(
+      (x) =>
+        Number.isFinite(x.s) &&
+        Number.isFinite(x.e) &&
+        x.e > windowStart &&
+        x.s < nowMs,
+    )
+    .sort((a, b) => a.s - b.s)
+  if (intervals.length === 0) return null
+
+  const merged: { s: number; e: number }[] = []
+  for (const x of intervals) {
+    const last = merged[merged.length - 1]
+    if (last && x.s <= last.e) last.e = Math.max(last.e, x.e)
+    else merged.push({ ...x })
+  }
+
+  const holes: { s: number; e: number }[] = []
+  // 窓の先頭〜最初の記録
+  holes.push({ s: windowStart, e: merged[0]!.s })
+  for (let i = 0; i < merged.length - 1; i++) {
+    holes.push({ s: merged[i]!.e, e: merged[i + 1]!.s })
+  }
+  // 最後の記録〜現在（記録中があればここは埋まっている）
+  holes.push({ s: merged[merged.length - 1]!.e, e: nowMs })
+
+  for (const h of holes) {
+    const s = Math.max(h.s, windowStart)
+    const e = Math.min(h.e, nowMs)
+    if (e - s >= HOLE_MIN_MS) return { start: s, end: e }
+  }
+  return null
+}
+
+function msToInputs(ms: number): { date: string; time: string } {
+  const iso = nowIso(new Date(ms))
+  return { date: isoToDateInput(iso), time: isoToTimeInput(iso) }
+}
+
 export function ActivityScreen() {
-  const { loading, error, events, clearError } = useStore()
+  const {
+    loading,
+    busy,
+    error,
+    events,
+    tasks,
+    folders,
+    clearError,
+    updateEvent,
+    addEvent,
+    deleteEvent,
+  } = useStore()
   const [visible, setVisible] = useState(PAGE)
+  const [now, setNow] = useState(() => Date.now())
+  const [sheet, setSheet] = useState<SheetState>({ type: 'closed' })
+  const [formFolderId, setFormFolderId] = useState('')
+  const [formTaskId, setFormTaskId] = useState('')
+  const [formStartDate, setFormStartDate] = useState('')
+  const [formStartTime, setFormStartTime] = useState('')
+  const [formEndDate, setFormEndDate] = useState('')
+  const [formEndTime, setFormEndTime] = useState('')
+  const [formError, setFormError] = useState<string | null>(null)
   const sentinelRef = useRef<HTMLDivElement | null>(null)
+
+  const hasLive = useMemo(() => events.some((e) => e.endedAt === null), [events])
+
+  const editing = useMemo(
+    () =>
+      sheet.type === 'edit'
+        ? events.find((e) => e.id === sheet.id) ?? null
+        : null,
+    [sheet, events],
+  )
+  const isRecording = editing?.endedAt === null
+
+  const folderTasks = useMemo(
+    () =>
+      tasks
+        .filter((t) => t.folderId === formFolderId)
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [tasks, formFolderId],
+  )
+
+  useEffect(() => {
+    if (!hasLive) return
+    const id = window.setInterval(() => setNow(Date.now()), 250)
+    return () => window.clearInterval(id)
+  }, [hasLive])
 
   useEffect(() => {
     setVisible(PAGE)
   }, [events])
+
+  // 編集対象が消えたら（削除など）モーダルを閉じる
+  useEffect(() => {
+    if (sheet.type === 'edit' && !editing) setSheet({ type: 'closed' })
+  }, [sheet, editing])
 
   const pageEvents = useMemo(() => events.slice(0, visible), [events, visible])
 
@@ -71,9 +188,97 @@ export function ActivityScreen() {
     return () => io.disconnect()
   }, [hasMore, events.length, groups.length])
 
+  function openEdit(ev: Event) {
+    const task = tasks.find((t) => t.id === ev.taskId)
+    setFormFolderId(task?.folderId ?? ev.folderId)
+    setFormTaskId(ev.taskId)
+    setFormStartDate(isoToDateInput(ev.startedAt))
+    setFormStartTime(isoToTimeInput(ev.startedAt))
+    setFormEndDate(ev.endedAt ? isoToDateInput(ev.endedAt) : '')
+    setFormEndTime(ev.endedAt ? isoToTimeInput(ev.endedAt) : '')
+    setFormError(null)
+    setSheet({ type: 'edit', id: ev.id })
+  }
+
+  function openAdd() {
+    const pressMs = Date.now()
+    const hole = findOldestHole(events, pressMs)
+    const start = msToInputs(hole ? hole.start : pressMs)
+    const end = msToInputs(hole ? hole.end : pressMs)
+
+    const latest = events[0]
+    const latestTask = latest ? tasks.find((t) => t.id === latest.taskId) : null
+    const task = latestTask ?? tasks[0] ?? null
+    setFormFolderId(task?.folderId ?? folders[0]?.id ?? '')
+    setFormTaskId(task?.id ?? '')
+    setFormStartDate(start.date)
+    setFormStartTime(start.time)
+    setFormEndDate(end.date)
+    setFormEndTime(end.time)
+    setFormError(null)
+    setSheet({ type: 'add' })
+  }
+
+  function changeFolder(folderId: string) {
+    setFormFolderId(folderId)
+    const first = tasks
+      .filter((t) => t.folderId === folderId)
+      .sort((a, b) => a.sortOrder - b.sortOrder)[0]
+    setFormTaskId(first?.id ?? '')
+  }
+
+  const closeSheet = () => {
+    setSheet({ type: 'closed' })
+    setFormError(null)
+  }
+
+  const submitSheet = async () => {
+    setFormError(null)
+    try {
+      const startedAt = dateTimeInputToIso(formStartDate, formStartTime)
+      if (sheet.type === 'edit') {
+        if (!editing) return
+        const endedAt =
+          editing.endedAt === null
+            ? null
+            : dateTimeInputToIso(formEndDate, formEndTime)
+        await updateEvent(sheet.id, {
+          taskId: formTaskId,
+          startedAt,
+          endedAt,
+        })
+      } else if (sheet.type === 'add') {
+        await addEvent({
+          taskId: formTaskId,
+          startedAt,
+          endedAt: dateTimeInputToIso(formEndDate, formEndTime),
+        })
+      }
+      closeSheet()
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : '保存に失敗しました')
+    }
+  }
+
+  const submitDelete = async () => {
+    if (sheet.type !== 'edit') return
+    if (!window.confirm('この記録を削除しますか？')) return
+    setFormError(null)
+    try {
+      await deleteEvent(sheet.id)
+      closeSheet()
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : '削除に失敗しました')
+    }
+  }
+
   if (loading) {
     return <p className={styles.status}>読み込み中…</p>
   }
+
+  const sheetOpen = sheet.type !== 'closed'
+  const taskMissing =
+    formTaskId !== '' && !folderTasks.some((t) => t.id === formTaskId)
 
   return (
     <section className={styles.root}>
@@ -99,36 +304,39 @@ export function ActivityScreen() {
               </div>
               <ul className={styles.list}>
                 {g.events.map((ev) => (
-                  <li key={ev.id} className={styles.row}>
-                    <span
-                      className={styles.swatch}
-                      style={{ background: ev.taskColor }}
-                      aria-hidden
-                    />
-                    <div className={styles.body}>
-                      <div className={styles.top}>
-                        <div className={styles.name}>
-                          {ev.taskName}
+                  <li key={ev.id}>
+                    <button
+                      type="button"
+                      className={styles.row}
+                      disabled={busy}
+                      onClick={() => openEdit(ev)}
+                    >
+                      <div className={styles.main}>
+                        <div className={styles.titleLine}>
+                          <span
+                            className={styles.swatch}
+                            style={{ background: ev.taskColor }}
+                            aria-hidden
+                          />
+                          <span className={styles.taskName}>{ev.taskName}</span>
+                          <span className={styles.folderMark} aria-hidden>
+                            <FolderIcon color={ev.folderColor} size={14} />
+                          </span>
+                          <span className={styles.folderName}>
+                            {ev.folderName}
+                          </span>
                           {ev.endedAt === null && (
                             <span className={styles.badge}>記録中</span>
                           )}
                         </div>
-                        <div className={styles.folder}>
-                          <span className={styles.folderName}>{ev.folderName}</span>
-                          <FolderIcon color={ev.folderColor} size={14} />
+                        <div className={styles.meta}>
+                          {formatEventRange(ev.startedAt, ev.endedAt)}
                         </div>
                       </div>
-                      <div className={styles.timeRow}>
-                        <span className={styles.meta}>
-                          {formatEventRange(ev.startedAt, ev.endedAt)}
-                        </span>
-                        {ev.endedAt !== null && (
-                          <span className={styles.duration}>
-                            {durationLabel(ev.startedAt, ev.endedAt)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                      <span className={styles.duration}>
+                        {durationLabel(ev.startedAt, ev.endedAt, now)}
+                      </span>
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -137,6 +345,143 @@ export function ActivityScreen() {
           <div ref={sentinelRef} className={styles.sentinel} aria-hidden />
           {!hasMore && <p className={styles.end}>すべて表示しました</p>}
         </>
+      )}
+
+      <div className={styles.addBar}>
+        <button
+          type="button"
+          className={styles.plus}
+          aria-label="記録を追加"
+          disabled={busy || tasks.length === 0}
+          onClick={openAdd}
+        >
+          ＋
+        </button>
+      </div>
+
+      {sheetOpen && (
+        <div className={styles.modalRoot}>
+          <div className={styles.modalBackdrop} aria-hidden />
+          <div
+            className={styles.sheet}
+            role="dialog"
+            aria-modal="true"
+            aria-label={sheet.type === 'add' ? '記録を追加' : '記録を編集'}
+          >
+            <h2 className={styles.sheetTitle}>
+              {sheet.type === 'add' ? '記録を追加' : '記録を編集'}
+            </h2>
+
+            <div className={styles.field}>
+              <span>フォルダ</span>
+              <FolderSelect
+                folders={folders}
+                value={formFolderId}
+                disabled={busy}
+                onChange={changeFolder}
+              />
+            </div>
+
+            <div className={styles.field}>
+              <span>タスク</span>
+              <TaskSelect
+                tasks={folderTasks}
+                value={formTaskId}
+                disabled={busy}
+                onChange={setFormTaskId}
+                extraOption={
+                  taskMissing && editing
+                    ? {
+                        id: formTaskId,
+                        name: `${editing.taskName}（削除済み）`,
+                        color: editing.taskColor,
+                      }
+                    : null
+                }
+              />
+            </div>
+
+            <div className={styles.field}>
+              <span>開始</span>
+              <div className={styles.dateTimeRow}>
+                <input
+                  type="date"
+                  className={styles.dateInput}
+                  value={formStartDate}
+                  disabled={busy}
+                  onChange={(e) => setFormStartDate(e.target.value)}
+                />
+                <TimeField
+                  value={formStartTime}
+                  disabled={busy}
+                  onChange={setFormStartTime}
+                  aria-label="開始時刻"
+                />
+              </div>
+            </div>
+
+            {!(sheet.type === 'edit' && isRecording) && (
+              <div className={styles.field}>
+                <span>終了</span>
+                <div className={styles.dateTimeRow}>
+                  <input
+                    type="date"
+                    className={styles.dateInput}
+                    value={formEndDate}
+                    disabled={busy}
+                    onChange={(e) => setFormEndDate(e.target.value)}
+                  />
+                  <TimeField
+                    value={formEndTime}
+                    disabled={busy}
+                    onChange={setFormEndTime}
+                    aria-label="終了時刻"
+                  />
+                </div>
+              </div>
+            )}
+
+            {formError && <p className={styles.formError}>{formError}</p>}
+
+            <div className={styles.sheetActions}>
+              {sheet.type === 'edit' && (
+                <button
+                  type="button"
+                  className={styles.danger}
+                  disabled={busy}
+                  onClick={() => void submitDelete()}
+                >
+                  削除
+                </button>
+              )}
+              <div className={styles.sheetActionsRight}>
+                <button
+                  type="button"
+                  className={styles.ghost}
+                  disabled={busy}
+                  onClick={closeSheet}
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="button"
+                  className={styles.primary}
+                  disabled={
+                    busy ||
+                    !formTaskId ||
+                    !formStartDate ||
+                    !formStartTime.trim() ||
+                    (!(sheet.type === 'edit' && isRecording) &&
+                      (!formEndDate || !formEndTime.trim()))
+                  }
+                  onClick={() => void submitSheet()}
+                >
+                  {sheet.type === 'add' ? '追加' : '保存'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </section>
   )

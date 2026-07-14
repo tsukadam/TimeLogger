@@ -1,3 +1,17 @@
 {
-  "updatedAt": "2026-07-14T00:00:00+09:00"
+    "updatedAt": "2026-07-15T00:23:29+09:00",
+    "log": {
+        "kind": "all",
+        "day": "2026-07-14",
+        "weekStart": "2026-07-13",
+        "monthYear": 2026,
+        "month": 7,
+        "year": 2026,
+        "customStart": "2026-07-13",
+        "customEnd": "2026-07-15",
+        "customApplied": {
+            "start": "2026-07-13",
+            "end": "2026-07-15"
+        }
+    }
 }

@@ -1,38 +1,3 @@
-/** #RRGGBB → 同系色候補（色相・彩度・明度を細かく刻む） */
-export function relatedColorsFrom(baseHex: string, count = 6): string[] {
-  const hsl = hexToHsl(baseHex)
-  if (!hsl) return Array.from({ length: Math.max(1, count) }, () => baseHex)
-
-  const out: string[] = []
-  for (let i = 0; i < count; i++) {
-    // 左右交互に 1.5° ずつ広げる／S・L はごくわずかに揺らす
-    const step = Math.ceil(i / 2)
-    const sign = i === 0 ? 0 : i % 2 === 0 ? 1 : -1
-    const dh = sign * step * 1.5
-    const ds = sign * step * 0.012
-    const dl = (i % 2 === 0 ? 1 : -1) * step * 0.01
-    out.push(
-      hslToHex(
-        (hsl.h + dh + 360) % 360,
-        clamp(hsl.s + ds, 0.25, 0.92),
-        clamp(hsl.l + dl, 0.32, 0.68),
-      ),
-    )
-  }
-  return out
-}
-
-/** パレット幅から、ピッカー1つ分を残して入る候補数 */
-export function paletteCountForWidth(widthPx: number): number {
-  const swatch = 28
-  const gap = 8
-  const picker = 28
-  // n swatches + 1 picker, gaps between items: n
-  // (n+1)*swatch + n*gap <= width
-  const n = Math.floor((widthPx - picker) / (swatch + gap))
-  return Math.max(4, Math.min(24, n))
-}
-
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n))
 }
@@ -82,6 +47,94 @@ function hslToHex(h: number, s: number, l: number): string {
       .toString(16)
       .padStart(2, '0')
   return `#${to(r)}${to(g)}${to(b)}`
+}
+
+function normalizeHex(hex: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
+  if (!m) return hex
+  return `#${m[1]!.toLowerCase()}`
+}
+
+/**
+ * 明暗: 暗2 / 暗1 / 元 / 明
+ * 明は弱め（旧 +2 → +1）
+ */
+const L_LEVELS = [-4, -2, 0, 1] as const
+const L_DELTA = 0.062
+/** 彩度: 下げ / 基準 / 上げ */
+const S_DELTAS = [-0.14, 0, 0.14] as const
+/** 色相1段（弱め） */
+const HUE_SHIFT = 8
+const HUE_ROW_OFFSETS = [-2, -1, 0, 1, 2] as const
+
+/**
+ * 1行12色。
+ * 彩度グループごとに: 暗2 → 暗1 → 元 → 明
+ * 全体: [S↓の4] [S基準の4] [S↑の4]
+ */
+function buildRow(h: number, baseS: number, baseL: number): string[] {
+  const out: string[] = []
+  for (const ds of S_DELTAS) {
+    const s = clamp(baseS + ds, 0.12, 0.95)
+    for (const li of L_LEVELS) {
+      const l = clamp(baseL + li * L_DELTA, 0.16, 0.84)
+      out.push(hslToHex(h, s, l))
+    }
+  }
+  return out
+}
+
+/** 中央行・基準彩度グループの「元」マス index = 1*4 + 2 */
+export const TASK_BASE_CELL = { row: 2, col: 6 } as const
+
+/**
+ * タスク色グリッド 5行×12列
+ * - 中央行・元マス = フォルダ色
+ * - 「＋」は UI 側で右下にはみ出し
+ */
+export function taskColorGrid(baseHex: string): string[][] {
+  const base = normalizeHex(baseHex)
+  const hsl = hexToHsl(base) ?? { h: 30, s: 0.62, l: 0.55 }
+
+  return HUE_ROW_OFFSETS.map((off, rowIndex) => {
+    const h = (hsl.h + off * HUE_SHIFT + 360) % 360
+    const row = buildRow(h, hsl.s, hsl.l)
+    if (rowIndex === TASK_BASE_CELL.row) {
+      row[TASK_BASE_CELL.col] = base
+    }
+    return row
+  })
+}
+
+/** タスク色がフォルダ基準グリッド上のどのマスか（カスタムなら null） */
+export function findTaskColorPos(
+  folderColor: string,
+  taskColor: string,
+): { row: number; col: number } | null {
+  const grid = taskColorGrid(folderColor)
+  const target = normalizeHex(taskColor).toLowerCase()
+  for (let row = 0; row < grid.length; row++) {
+    for (let col = 0; col < grid[row]!.length; col++) {
+      if (grid[row]![col]!.toLowerCase() === target) {
+        return { row, col }
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * フォルダ色変更時、候補マス由来なら同位置の新色へ。
+ * ピッカー色（グリッドに無い）はそのまま → null。
+ */
+export function remapPaletteTaskColor(
+  oldFolderColor: string,
+  newFolderColor: string,
+  taskColor: string,
+): string | null {
+  const pos = findTaskColorPos(oldFolderColor, taskColor)
+  if (!pos) return null
+  return taskColorGrid(newFolderColor)[pos.row]![pos.col]!
 }
 
 export const DEFAULT_PALETTE = [

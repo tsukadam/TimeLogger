@@ -34,6 +34,13 @@
   white-space: nowrap;
 }
 
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
 .list {
   position: absolute;
   z-index: 20;
