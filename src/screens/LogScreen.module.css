@@ -148,11 +148,6 @@
   gap: 3px;
 }
 
-.dayHalfLabel {
-  color: var(--muted);
-  font-size: 0.78rem;
-}
-
 .dayTrackBar {
   position: relative;
   height: 28px;
@@ -358,10 +353,18 @@
 }
 
 .tdTime {
+  /* 列幅は内容最大に収縮し、右揃えなので末尾の s が縦に揃う */
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   color: var(--fg);
+}
+
+.tdPct {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--muted);
 }
 
 .dot {
@@ -448,6 +451,8 @@
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 1px;
+  /* 月表示行との間に少し隙間 */
+  margin-top: 12px;
   color: var(--muted);
   font-size: 0.68rem;
   text-align: center;
@@ -515,6 +520,8 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 6px;
+  /* 年表示行との間に少し隙間（カレンダーの曜日行と同様） */
+  margin-top: 12px;
 }
 
 .monthBtn,

@@ -20,6 +20,8 @@ type PalettePos =
 type Sheet =
   | { type: 'closed' }
   | { type: 'add' }
+  // フォルダ固定のタスク追加（種別・フォルダ選択なし）
+  | { type: 'add-task-in'; folderId: string }
   | { type: 'edit-folder'; id: string }
   | { type: 'edit-task'; id: string }
 
@@ -187,6 +189,21 @@ export function TasksScreen() {
     setSheet({ type: 'add' })
   }
 
+  function openAddTaskIn(folder: Folder) {
+    setAddKind('task')
+    setName('')
+    setFolderId(folder.id)
+    setPickerFill(null)
+    setColorFrom('palette')
+    setPalettePos({
+      kind: 'task',
+      row: TASK_BASE_CELL.row,
+      col: TASK_BASE_CELL.col,
+    })
+    setColor(folder.color)
+    setSheet({ type: 'add-task-in', folderId: folder.id })
+  }
+
   function openEditFolder(folder: Folder) {
     setAddKind('folder')
     setName(folder.name)
@@ -251,6 +268,8 @@ export function TasksScreen() {
           if (!folderId) return
           await addTask(folderId, trimmed, color)
         }
+      } else if (sheet.type === 'add-task-in') {
+        await addTask(sheet.folderId, trimmed, color)
       } else if (sheet.type === 'edit-folder') {
         await updateFolder(sheet.id, { name: trimmed, color })
       } else if (sheet.type === 'edit-task') {
@@ -322,6 +341,17 @@ export function TasksScreen() {
             <h2 className={styles.folderName}>{folder.name}</h2>
           </button>
 
+          {folderTasks.length === 0 && (
+            <button
+              type="button"
+              className={styles.addTaskInFolder}
+              disabled={busy}
+              aria-label={`${folder.name} にタスクを追加`}
+              onClick={() => openAddTaskIn(folder)}
+            >
+              ＋
+            </button>
+          )}
           <ul className={styles.taskList}>
             {folderTasks.map((task) => {
               const running = current?.taskId === task.id
@@ -390,14 +420,19 @@ export function TasksScreen() {
 
       {sheetOpen && (
         <div className={styles.modalRoot}>
-          <div className={styles.modalBackdrop} aria-hidden />
+          <button
+            type="button"
+            className={styles.modalBackdrop}
+            aria-label="閉じる"
+            onClick={closeSheet}
+          />
           <div
             className={styles.sheet}
             role="dialog"
             aria-modal="true"
             aria-label={isEdit ? '編集' : '追加'}
           >
-          {!isEdit && (
+          {sheet.type === 'add' && (
             <div className={styles.kindRow}>
               <button
                 type="button"
@@ -443,7 +478,7 @@ export function TasksScreen() {
             </h2>
           )}
 
-          {addKind === 'task' && (
+          {addKind === 'task' && sheet.type !== 'add-task-in' && (
             <div className={styles.field}>
               <span>フォルダ</span>
               <FolderSelect
@@ -573,19 +608,11 @@ export function TasksScreen() {
             <div className={styles.sheetActionsRight}>
               <button
                 type="button"
-                className={styles.ghost}
-                disabled={busy}
-                onClick={closeSheet}
-              >
-                キャンセル
-              </button>
-              <button
-                type="button"
                 className={styles.primary}
                 disabled={busy || !name.trim() || (addKind === 'task' && !folderId)}
                 onClick={() => void submitSheet()}
               >
-                {isEdit ? '保存' : '追加'}
+                {isEdit ? 'Save' : 'Add'}
               </button>
             </div>
           </div>

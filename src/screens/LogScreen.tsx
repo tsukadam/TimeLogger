@@ -170,11 +170,12 @@ function buildApplied(prefs: LogPrefs, nowMs: number, events: Event[]): AppliedR
   }
   if (kind === 'week') {
     const start = dayStartMs(prefs.weekStart)
+    const endKey = addDaysKey(prefs.weekStart, 6)
     return {
       kind,
       start,
       end: start + 7 * DAY_MS,
-      label: `${md(prefs.weekStart)} 〜 ${md(addDaysKey(prefs.weekStart, 6))}`,
+      label: `${md(prefs.weekStart)}（${weekdayShort(prefs.weekStart)}）〜 ${md(endKey)}（${weekdayShort(endKey)}）`,
     }
   }
   if (kind === 'month') {
@@ -207,7 +208,7 @@ function buildApplied(prefs: LogPrefs, nowMs: number, events: Event[]): AppliedR
     start: dayStartMs(lo),
     end: dayStartMs(hi) + DAY_MS,
     label: applied
-      ? `${md(lo)} 〜 ${md(hi)}`
+      ? `${md(lo)}（${weekdayShort(lo)}）〜 ${md(hi)}（${weekdayShort(hi)}）`
       : `${md(lo)}（${weekdayShort(lo)}）`,
   }
 }
@@ -367,11 +368,18 @@ function Donut({ slices, totalSec }: { slices: Slice[]; totalSec: number }) {
   const RING_OUT = 70
   const R = (RING_OUT + HOLE) / 2
   const STROKE = RING_OUT - HOLE
-  // ラベル基準半径 = 外周 + 1行
-  const LABEL_R = RING_OUT + LABEL_FS
-  // 上下はラベル1行分の半分程度あれば足りる（傾斜・棒用の余分は不要）
+  // 水平線の終端とラベルの間の余白（棒の始点と円のパディングにも使う）
+  const LABEL_PAD = 4
+  // 伸ばし棒の始点: 円の外周から LABEL_PAD だけ外側
+  const LEADER_START_R = RING_OUT + LABEL_PAD
+  // 外周B（Basic）: 左右にずらす前の基準半径。ここまで放射状に棒を伸ばす
+  // 始点パディングの分だけ全体も外側にずれる
+  const BASE_R = RING_OUT + LABEL_FS * 1.2 + LABEL_PAD
+  // 外周R/L: 外周Bを左右へずらした円。ラベルはこの上に載る
+  const LR_ADJUST = 18
+  // 上下はラベル1行分の半分程度あれば足りる
   const Y_PAD = Math.ceil(LABEL_FS * 0.55)
-  const VB_H = (LABEL_R + Y_PAD) * 2
+  const VB_H = (BASE_R + Y_PAD) * 2
   const CX = VB_W / 2
   const CY = VB_H / 2
   const C = 2 * Math.PI * R
@@ -382,6 +390,8 @@ function Donut({ slices, totalSec }: { slices: Slice[]; totalSec: number }) {
     tx: number
     ty: number
     anchor: 'start' | 'end'
+    // 伸ばし棒: パイ外縁 →（放射状）→ 外周B →（水平）→ ラベル手前
+    points: string
   }
 
   const callouts: Callout[] = []
@@ -394,16 +404,27 @@ function Donut({ slices, totalSec }: { slices: Slice[]; totalSec: number }) {
     const midDeg = startDeg + frac * 180
     acc += s.sec
     const midRad = (midDeg * Math.PI) / 180
-    const tx = CX + Math.cos(midRad) * LABEL_R
-    const ty = CY + Math.sin(midRad) * LABEL_R
-    const onRight = Math.cos(midRad) >= 0
+    const cos = Math.cos(midRad)
+    const sin = Math.sin(midRad)
+    const onRight = cos >= 0
+    const dir = onRight ? 1 : -1
+    // 放射部: パイ外縁の少し外（パディング分）から外周Bまで
+    const px = CX + cos * LEADER_START_R
+    const py = CY + sin * LEADER_START_R
+    const bx = CX + cos * BASE_R
+    const by = CY + sin * BASE_R
+    // 水平部: LR_ADJUST からラベル余白を引いた長さ
+    const hx = bx + dir * (LR_ADJUST - LABEL_PAD)
+    // ラベルは外周R/L（外周Bを左右にずらした円）上
+    const tx = bx + dir * LR_ADJUST
     callouts.push({
       id: s.id,
       name: s.name.length > 10 ? `${s.name.slice(0, 9)}…` : s.name,
       tx,
-      ty,
+      ty: by,
       // 右: 左寄せ（文字は外へ）／ 左: 右寄せ（文字は外へ）
       anchor: onRight ? 'start' : 'end',
+      points: `${px},${py} ${bx},${by} ${hx},${by}`,
     })
   }
 
@@ -443,15 +464,22 @@ function Donut({ slices, totalSec }: { slices: Slice[]; totalSec: number }) {
           )
         })}
         {callouts.map((c) => (
-          <text
-            key={c.id}
-            x={c.tx}
-            y={c.ty + LABEL_FS * 0.32}
-            textAnchor={c.anchor}
-            className={styles.donutLabel}
-          >
-            {c.name}
-          </text>
+          <g key={c.id}>
+            <polyline
+              points={c.points}
+              fill="none"
+              stroke="var(--muted)"
+              strokeWidth={1}
+            />
+            <text
+              x={c.tx}
+              y={c.ty + LABEL_FS * 0.32}
+              textAnchor={c.anchor}
+              className={styles.donutLabel}
+            >
+              {c.name}
+            </text>
+          </g>
         ))}
       </svg>
     </div>
@@ -472,13 +500,13 @@ function IndividualChart({
     const mid = col.start + DAY_MS / 2
     const halves = [
       {
-        label: '午前',
+        key: 'am',
         start: col.start,
         end: mid,
         ticks: ['0', '3', '6', '9', '12'],
       },
       {
-        label: '午後',
+        key: 'pm',
         start: mid,
         end: col.end,
         ticks: ['12', '15', '18', '21', '24'],
@@ -496,8 +524,7 @@ function IndividualChart({
             .filter((s) => s.end > s.start)
           const span = Math.max(1, h.end - h.start)
           return (
-            <div key={h.label} className={styles.dayHalf}>
-              <span className={styles.dayHalfLabel}>{h.label}</span>
+            <div key={h.key} className={styles.dayHalf}>
               <div className={styles.dayTrackBar}>
                 {segs.map((s) => (
                   <button
@@ -688,11 +715,23 @@ export function LogScreen() {
     setDetailOpen(false)
   }
 
-  const { taskSlices, folderSlices, totalSec, columns, chartMode, dayEvents } =
+  const {
+    taskSlices,
+    folderSlices,
+    pieTaskSlices,
+    pieFolderSlices,
+    totalSec,
+    columns,
+    chartMode,
+    dayEvents,
+  } =
     useMemo(() => {
       const { start, end, kind: k } = applied
       const byTask = new Map<string, Slice>()
       const byFolder = new Map<string, Slice>()
+      // 期間内で最初に記録された時刻（円グラフの並び順用）
+      const firstByTask = new Map<string, number>()
+      const firstByFolder = new Map<string, number>()
       const dayEvents: Event[] = []
 
       for (const ev of events) {
@@ -715,6 +754,7 @@ export function LogScreen() {
             color: d.taskColor,
             sec,
           })
+        firstByTask.set(d.taskId, Math.min(firstByTask.get(d.taskId) ?? Infinity, a))
 
         const f = byFolder.get(d.folderId)
         if (f) f.sec += sec
@@ -725,6 +765,10 @@ export function LogScreen() {
             color: d.folderColor,
             sec,
           })
+        firstByFolder.set(
+          d.folderId,
+          Math.min(firstByFolder.get(d.folderId) ?? Infinity, a),
+        )
       }
 
       dayEvents.sort(
@@ -734,6 +778,13 @@ export function LogScreen() {
 
       const taskSlices = [...byTask.values()].sort((a, b) => b.sec - a.sec)
       const folderSlices = [...byFolder.values()].sort((a, b) => b.sec - a.sec)
+      // 円グラフは初出現順（細かいパイが固まりにくく、ラベル重なりを緩和）
+      const pieTaskSlices = [...byTask.values()].sort(
+        (a, b) => (firstByTask.get(a.id) ?? 0) - (firstByTask.get(b.id) ?? 0),
+      )
+      const pieFolderSlices = [...byFolder.values()].sort(
+        (a, b) => (firstByFolder.get(a.id) ?? 0) - (firstByFolder.get(b.id) ?? 0),
+      )
       const totalSec = taskSlices.reduce((n, s) => n + s.sec, 0)
 
       let columns: Column[] = []
@@ -788,6 +839,8 @@ export function LogScreen() {
       return {
         taskSlices,
         folderSlices,
+        pieTaskSlices,
+        pieFolderSlices,
         totalSec,
         columns,
         chartMode,
@@ -847,7 +900,7 @@ export function LogScreen() {
       )}
 
       <div className={styles.totalLine}>
-        <span className={styles.sectionTitle}>トラック総時間</span>
+        <span className={styles.sectionTitle}>Tracked Time</span>
         <span className={styles.totalValue}>{formatDurationHms(totalSec)}</span>
       </div>
 
@@ -855,85 +908,80 @@ export function LogScreen() {
 
       {prefs.kind !== 'all' && (
         <>
-          <h2 className={styles.sectionTitle}>個別グラフ</h2>
+          <h2 className={styles.sectionTitle}>Summary</h2>
           <div className={styles.panel}>
             {totalSec === 0 ? (
               <p className={styles.status}>この期間の記録はありません。</p>
             ) : (
-              <>
-                <IndividualChart
-                  columns={columns}
-                  chartMode={chartMode}
-                  onSeg={setEditId}
-                />
-                {prefs.kind === 'day' && (
-                  <>
-                    <button
-                      type="button"
-                      className={styles.detailBtn}
-                      onClick={() => setDetailOpen((v) => !v)}
-                    >
-                      {detailOpen ? '詳細を閉じる' : '詳細'}
-                    </button>
-                    {detailOpen && (
-                      <ul className={styles.detailList}>
-                        {dayEvents.length === 0 ? (
-                          <li className={styles.status}>記録なし</li>
-                        ) : (
-                          dayEvents.map((ev) => {
-                            const d = resolveDisplay(ev, tasks, folders)
-                            return (
-                              <li key={ev.id}>
-                                <button
-                                  type="button"
-                                  className={styles.detailRow}
-                                  onClick={() => setEditId(ev.id)}
-                                >
-                                  <div className={styles.detailMain}>
-                                    <div className={styles.detailTitle}>
-                                      <span
-                                        className={styles.dot}
-                                        style={{ background: d.taskColor }}
-                                      />
-                                      <span>{d.taskName}</span>
-                                      <FolderIcon
-                                        color={d.folderColor}
-                                        size={12}
-                                      />
-                                      <span className={styles.detailFolder}>
-                                        {d.folderName}
-                                      </span>
-                                    </div>
-                                    <div className={styles.detailMeta}>
-                                      {formatEventRange(ev.startedAt, ev.endedAt)}
-                                    </div>
-                                  </div>
-                                  <span className={styles.detailDur}>
-                                    {durationLabel(ev.startedAt, ev.endedAt, now)}
-                                  </span>
-                                </button>
-                              </li>
-                            )
-                          })
-                        )}
-                      </ul>
-                    )}
-                  </>
-                )}
-              </>
+              <IndividualChart
+                columns={columns}
+                chartMode={chartMode}
+                onSeg={setEditId}
+              />
             )}
           </div>
+          {prefs.kind === 'day' && totalSec > 0 && (
+            <>
+              <button
+                type="button"
+                className={styles.detailBtn}
+                onClick={() => setDetailOpen((v) => !v)}
+              >
+                {detailOpen ? 'Close' : 'Detail'}
+              </button>
+              {detailOpen && (
+                <ul className={styles.detailList}>
+                  {dayEvents.length === 0 ? (
+                    <li className={styles.status}>記録なし</li>
+                  ) : (
+                    dayEvents.map((ev) => {
+                      const d = resolveDisplay(ev, tasks, folders)
+                      return (
+                        <li key={ev.id}>
+                          <button
+                            type="button"
+                            className={styles.detailRow}
+                            onClick={() => setEditId(ev.id)}
+                          >
+                            <div className={styles.detailMain}>
+                              <div className={styles.detailTitle}>
+                                <span
+                                  className={styles.dot}
+                                  style={{ background: d.taskColor }}
+                                />
+                                <span>{d.taskName}</span>
+                                <FolderIcon color={d.folderColor} size={12} />
+                                <span className={styles.detailFolder}>
+                                  {d.folderName}
+                                </span>
+                              </div>
+                              <div className={styles.detailMeta}>
+                                {formatEventRange(ev.startedAt, ev.endedAt)}
+                              </div>
+                            </div>
+                            <span className={styles.detailDur}>
+                              {durationLabel(ev.startedAt, ev.endedAt, now)}
+                            </span>
+                          </button>
+                        </li>
+                      )
+                    })
+                  )}
+                </ul>
+              )}
+            </>
+          )}
           <hr className={styles.rule} />
         </>
       )}
 
-      <h2 className={styles.sectionTitle}>円グラフ（タスク）</h2>
+      <h2 className={styles.sectionTitle}>Tasks</h2>
       {totalSec === 0 ? (
         <p className={styles.status}>この期間の記録はありません。</p>
       ) : (
         <>
           <div className={styles.pieCenter}>
-            <Donut slices={taskSlices} totalSec={totalSec} />
+            <Donut slices={pieTaskSlices} totalSec={totalSec} />
           </div>
           <table className={styles.table}>
             <tbody>
@@ -949,6 +997,9 @@ export function LogScreen() {
                   <td className={styles.tdTime}>
                     {formatDurationHms(s.sec)}
                   </td>
+                  <td className={styles.tdPct}>
+                    {((s.sec / Math.max(totalSec, 1)) * 100).toFixed(1)}%
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -958,13 +1009,13 @@ export function LogScreen() {
 
       <hr className={styles.rule} />
 
-      <h2 className={styles.sectionTitle}>円グラフ（フォルダ）</h2>
+      <h2 className={styles.sectionTitle}>Genres</h2>
       {totalSec === 0 ? (
         <p className={styles.status}>この期間の記録はありません。</p>
       ) : (
         <>
           <div className={styles.pieCenter}>
-            <Donut slices={folderSlices} totalSec={totalSec} />
+            <Donut slices={pieFolderSlices} totalSec={totalSec} />
           </div>
           <table className={styles.table}>
             <tbody>
@@ -979,6 +1030,9 @@ export function LogScreen() {
                   <td className={styles.tdName}>{s.name}</td>
                   <td className={styles.tdTime}>
                     {formatDurationHms(s.sec)}
+                  </td>
+                  <td className={styles.tdPct}>
+                    {((s.sec / Math.max(totalSec, 1)) * 100).toFixed(1)}%
                   </td>
                 </tr>
               ))}
@@ -1006,8 +1060,6 @@ export function LogScreen() {
               width: sheetPos.width,
             }}
           >
-            <h2 className={styles.sheetTitle}>期間を選ぶ</h2>
-
             {draft.kind === 'custom' && (
               <div className={styles.customTargets}>
                 <button
@@ -1022,7 +1074,7 @@ export function LogScreen() {
                     setViewYm(ymParts(draft.customStart))
                   }}
                 >
-                  開始 {md(draft.customStart)}
+                  開始 {md(draft.customStart)}（{weekdayShort(draft.customStart)}）
                 </button>
                 <button
                   type="button"
@@ -1036,7 +1088,7 @@ export function LogScreen() {
                     setViewYm(ymParts(draft.customEnd))
                   }}
                 >
-                  終了 {md(draft.customEnd)}
+                  終了 {md(draft.customEnd)}（{weekdayShort(draft.customEnd)}）
                 </button>
               </div>
             )}
@@ -1058,9 +1110,9 @@ export function LogScreen() {
                     setDraft({ ...draft, day: d })
                     setViewYm(ymParts(d))
                   } else if (draft.kind === 'week') {
-                    const ws = mondayKeyOf(d)
-                    setDraft({ ...draft, weekStart: ws })
-                    setViewYm(ymParts(ws))
+                    // クリックした日から7日間（何曜日始まりでも可）
+                    setDraft({ ...draft, weekStart: d })
+                    setViewYm(ymParts(d))
                   } else if (customTarget === 'start') {
                     setDraft({
                       ...draft,
@@ -1159,13 +1211,6 @@ export function LogScreen() {
             )}
 
             <div className={styles.sheetActions}>
-              <button
-                type="button"
-                className={styles.ghost}
-                onClick={() => setPickerOpen(false)}
-              >
-                キャンセル
-              </button>
               <button
                 type="button"
                 className={styles.primary}

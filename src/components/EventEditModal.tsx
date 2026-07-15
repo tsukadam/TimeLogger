@@ -110,7 +110,12 @@ export function EventEditModal({
 
   return (
     <div className={styles.modalRoot}>
-      <div className={styles.modalBackdrop} aria-hidden />
+      <button
+        type="button"
+        className={styles.modalBackdrop}
+        aria-label="閉じる"
+        onClick={onClose}
+      />
       <div
         className={styles.sheet}
         role="dialog"
@@ -202,14 +207,6 @@ export function EventEditModal({
           <div className={styles.sheetActionsRight}>
             <button
               type="button"
-              className={styles.ghost}
-              disabled={busy}
-              onClick={onClose}
-            >
-              キャンセル
-            </button>
-            <button
-              type="button"
               className={styles.primary}
               disabled={
                 busy ||
@@ -220,7 +217,7 @@ export function EventEditModal({
               }
               onClick={() => void submit()}
             >
-              保存
+              Save
             </button>
           </div>
         </div>

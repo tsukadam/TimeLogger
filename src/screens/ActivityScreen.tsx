@@ -326,7 +326,7 @@ export function ActivityScreen() {
                             {ev.folderName}
                           </span>
                           {ev.endedAt === null && (
-                            <span className={styles.badge}>記録中</span>
+                            <span className={styles.badge}>Tracking...</span>
                           )}
                         </div>
                         <div className={styles.meta}>
@@ -361,7 +361,12 @@ export function ActivityScreen() {
 
       {sheetOpen && (
         <div className={styles.modalRoot}>
-          <div className={styles.modalBackdrop} aria-hidden />
+          <button
+            type="button"
+            className={styles.modalBackdrop}
+            aria-label="閉じる"
+            onClick={closeSheet}
+          />
           <div
             className={styles.sheet}
             role="dialog"
@@ -457,14 +462,6 @@ export function ActivityScreen() {
               <div className={styles.sheetActionsRight}>
                 <button
                   type="button"
-                  className={styles.ghost}
-                  disabled={busy}
-                  onClick={closeSheet}
-                >
-                  キャンセル
-                </button>
-                <button
-                  type="button"
                   className={styles.primary}
                   disabled={
                     busy ||
@@ -476,7 +473,7 @@ export function ActivityScreen() {
                   }
                   onClick={() => void submitSheet()}
                 >
-                  {sheet.type === 'add' ? '追加' : '保存'}
+                  {sheet.type === 'add' ? 'Add' : 'Save'}
                 </button>
               </div>
             </div>

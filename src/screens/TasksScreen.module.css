@@ -82,14 +82,15 @@
 .taskRow {
   display: flex;
   align-items: stretch;
-  gap: 8px;
+  /* 横の隙間は縦(taskList の 8px)より小さく: 録画ボタンは横の仲間 */
+  gap: 6px;
 }
 
 .recStart,
 .recStop {
   position: relative;
-  width: 56px;
-  height: 56px;
+  width: 64px;
+  height: 64px;
   flex-shrink: 0;
   border-radius: 8px;
   border: 1px solid var(--line);
@@ -145,15 +146,16 @@
 
 .elapsedInBtn {
   position: absolute;
-  left: 2px;
-  right: 2px;
+  left: 50%;
   bottom: 3px;
+  transform: translateX(-50%);
   color: #fff;
   font-size: 0.55rem;
   line-height: 1.05;
   font-variant-numeric: tabular-nums;
   text-align: center;
-  word-break: break-all;
+  /* 改行させない。はみ出しても配置に影響せず上に重ねて表示する */
+  white-space: nowrap;
   pointer-events: none;
 }
 
@@ -167,7 +169,7 @@
   border-radius: 8px;
   background: var(--panel);
   border: 1px solid var(--line);
-  min-height: 56px;
+  min-height: 64px;
   cursor: pointer;
   text-align: left;
   color: inherit;
@@ -239,6 +241,22 @@
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, 0.58);
+  border: none;
+  padding: 0;
+  cursor: default;
+}
+
+/* 空フォルダ内のタスク追加ボタン（タスク行の代わり） */
+.addTaskInFolder {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 8px;
+  border: 1px dashed var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
 }
 
 .sheet {
