@@ -10,19 +10,27 @@
   overflow: hidden;
 }
 
+/* スマホでは左右余白を詰める（MyOnkan と同じ 10px） */
+@media (max-width: 480px) {
+  .app {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+}
+
 .header {
   flex-shrink: 0;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 6px;
   background: var(--bg);
 }
 
 .brand {
   font-family: 'Avenir Next', 'Segoe UI', 'Hiragino Sans', sans-serif;
-  font-size: 1.35rem;
+  font-size: 1rem;
   font-weight: 700;
   letter-spacing: 0.02em;
 }

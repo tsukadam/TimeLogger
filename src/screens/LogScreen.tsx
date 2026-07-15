@@ -82,6 +82,10 @@ function md(dayKey: string) {
   return `${Number(dayKey.slice(5, 7))}/${Number(dayKey.slice(8, 10))}`
 }
 
+function ymd(dayKey: string) {
+  return `${Number(dayKey.slice(0, 4))}/${md(dayKey)}`
+}
+
 function weekdayShort(dayKey: string) {
   return new Intl.DateTimeFormat('ja-JP', {
     timeZone: 'Asia/Tokyo',
@@ -1075,7 +1079,7 @@ export function LogScreen() {
                     setViewYm(ymParts(draft.customStart))
                   }}
                 >
-                  開始 {md(draft.customStart)}（{weekdayShort(draft.customStart)}）
+                  開始 {ymd(draft.customStart)}（{weekdayShort(draft.customStart)}）
                 </button>
                 <button
                   type="button"
@@ -1089,7 +1093,7 @@ export function LogScreen() {
                     setViewYm(ymParts(draft.customEnd))
                   }}
                 >
-                  終了 {md(draft.customEnd)}（{weekdayShort(draft.customEnd)}）
+                  終了 {ymd(draft.customEnd)}（{weekdayShort(draft.customEnd)}）
                 </button>
               </div>
             )}

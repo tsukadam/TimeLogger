@@ -570,6 +570,8 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  /* 決定ボタン行の上に余白 */
+  margin-top: 8px;
 }
 
 .ghost,

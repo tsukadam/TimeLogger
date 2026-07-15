@@ -15,12 +15,15 @@ export default defineConfig(({ command }) => ({
       manifest: {
         name: 'TimeLogger',
         short_name: 'TimeLogger',
+        id: './',
         description: '個人用ライフログ・タイムトラッカー',
+        lang: 'ja',
         theme_color: '#0e1014',
         background_color: '#0e1014',
         display: 'standalone',
         orientation: 'portrait',
         start_url: './',
+        scope: './',
         icons: [
           {
             src: 'pwa-icon.svg',
