@@ -55,23 +55,11 @@ export function TimeField({
 
   useEffect(() => {
     if (!open) return
-    const onPointer = (e: PointerEvent) => {
-      const t = e.target as Node
-      if (rootRef.current?.contains(t)) return
-      if (panelRef.current?.contains(t)) return
-      commitClose()
-    }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') commitClose()
     }
-    // 開いた直後のクリックで閉じないよう遅延
-    const id = window.setTimeout(() => {
-      document.addEventListener('pointerdown', onPointer, true)
-    }, 0)
     document.addEventListener('keydown', onKey)
     return () => {
-      window.clearTimeout(id)
-      document.removeEventListener('pointerdown', onPointer, true)
       document.removeEventListener('keydown', onKey)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -99,21 +87,32 @@ export function TimeField({
       {open &&
         pos &&
         createPortal(
-          <div
-            ref={panelRef}
-            className={styles.panel}
-            style={{ top: pos.top, left: pos.left }}
-            role="dialog"
-            aria-label="時刻"
-          >
-            <TimeWheel
-              value={draft}
-              onChange={(v) => {
-                setDraft(v)
-                draftRef.current = v
+          <>
+            {/* 外側タップで確定して閉じる。背面の要素にはタップを通さない */}
+            <div
+              className={styles.overlay}
+              onPointerDown={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                commitClose()
               }}
             />
-          </div>,
+            <div
+              ref={panelRef}
+              className={styles.panel}
+              style={{ top: pos.top, left: pos.left }}
+              role="dialog"
+              aria-label="時刻"
+            >
+              <TimeWheel
+                value={draft}
+                onChange={(v) => {
+                  setDraft(v)
+                  draftRef.current = v
+                }}
+              />
+            </div>
+          </>,
           document.body,
         )}
     </div>

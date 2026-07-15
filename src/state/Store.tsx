@@ -10,7 +10,7 @@ import {
 import { fetchResource, isOnline, putResource } from '../api/client'
 import { newId } from '../lib/id'
 import { remapPaletteTaskColor } from '../lib/color'
-import { MIN_RECORD_MS, elapsedMs, nowIso } from '../lib/time'
+import { MIN_RECORD_MS, elapsedMs, formatEventRange, nowIso } from '../lib/time'
 import type {
   Event,
   EventsFile,
@@ -69,6 +69,35 @@ function requireOnline(): void {
   if (!isOnline()) {
     throw new Error('オフラインです')
   }
+}
+
+/** 手入力時刻の「未来」判定の猶予（入力中の時間経過を許容） */
+const FUTURE_GRACE_MS = 60000
+
+/**
+ * 既存記録との時間重複を探す。記録中（endedAt null）は現在時刻まで
+ * 占有しているとみなす。端点の一致（10:00終了と10:00開始）は重複としない。
+ */
+function findOverlap(
+  events: Event[],
+  startMs: number,
+  endMs: number,
+  excludeId: string | null,
+  nowMs: number,
+): Event | null {
+  for (const ev of events) {
+    if (excludeId !== null && ev.id === excludeId) continue
+    const s = new Date(ev.startedAt).getTime()
+    const e = ev.endedAt ? new Date(ev.endedAt).getTime() : nowMs
+    if (startMs < e && s < endMs) return ev
+  }
+  return null
+}
+
+function overlapError(hit: Event): Error {
+  return new Error(
+    `既存の記録（${hit.taskName} ${formatEventRange(hit.startedAt, hit.endedAt)}）と時間が重なっています`,
+  )
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -350,15 +379,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const startMs = new Date(patch.startedAt).getTime()
       if (!Number.isFinite(startMs)) throw new Error('開始時刻が不正です')
 
+      const nowMs = Date.now()
       const endedAt = patch.endedAt
+      let endMs = nowMs // 記録中は現在時刻まで占有しているとみなす
       if (endedAt !== null) {
-        const endMs = new Date(endedAt).getTime()
+        endMs = new Date(endedAt).getTime()
         if (!Number.isFinite(endMs)) throw new Error('終了時刻が不正です')
         if (endMs <= startMs) throw new Error('終了は開始より後にしてください')
         if (endMs - startMs < MIN_RECORD_MS) {
           throw new Error('1秒未満の記録にはできません')
         }
       }
+
+      // 未来の記録は作れない（リアルタイム記録との衝突防止）
+      if (
+        startMs > nowMs + FUTURE_GRACE_MS ||
+        (endedAt !== null && endMs > nowMs + FUTURE_GRACE_MS)
+      ) {
+        throw new Error('未来の時間には記録を作れません')
+      }
+      // 他の記録との時間重複は禁止
+      const hit = findOverlap(eventsFile.events, startMs, endMs, eventId, nowMs)
+      if (hit) throw overlapError(hit)
 
       await runWrite(async () => {
         const t = nowIso()
@@ -415,6 +457,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (endMs - startMs < MIN_RECORD_MS) {
         throw new Error('1秒未満の記録にはできません')
       }
+
+      const nowMs = Date.now()
+      // 未来の記録は作れない（リアルタイム記録との衝突防止）
+      if (startMs > nowMs + FUTURE_GRACE_MS || endMs > nowMs + FUTURE_GRACE_MS) {
+        throw new Error('未来の時間には記録を作れません')
+      }
+      // 他の記録との時間重複は禁止
+      const hit = findOverlap(eventsFile.events, startMs, endMs, null, nowMs)
+      if (hit) throw overlapError(hit)
 
       await runWrite(async () => {
         const t = nowIso()

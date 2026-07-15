@@ -11,7 +11,7 @@ export default defineConfig(({ command }) => ({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg'],
+      includeAssets: ['favicon-v2.svg'],
       manifest: {
         name: 'TimeLogger',
         short_name: 'TimeLogger',
@@ -26,13 +26,13 @@ export default defineConfig(({ command }) => ({
         scope: './',
         icons: [
           {
-            src: 'pwa-icon.svg',
+            src: 'pwa-icon-v2.svg',
             sizes: 'any',
             type: 'image/svg+xml',
             purpose: 'any',
           },
           {
-            src: 'pwa-icon.svg',
+            src: 'pwa-icon-v2.svg',
             sizes: 'any',
             type: 'image/svg+xml',
             purpose: 'maskable',

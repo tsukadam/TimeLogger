@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { EventEditModal } from '../components/EventEditModal'
 import { FolderIcon } from '../components/FolderIcon'
 import {
@@ -47,6 +48,16 @@ type Column = {
   segs: Seg[]
 }
 
+type TotalCol = {
+  key: string
+  label: string
+  spanSec: number
+  parts: Slice[]
+}
+
+// Month サマリーで表示する日付ラベル（全日表示だと重なるため）
+const MONTH_LABEL_DAYS = [1, 5, 10, 15, 20, 25, 30]
+
 const DAY_MS = 86400000
 const MONTH_NAMES = [
   '1月',
@@ -93,6 +104,27 @@ function weekdayShort(dayKey: string) {
   }).format(new Date(dayStartMs(dayKey)))
 }
 
+/**
+ * 日付キーへ n ヶ月加算。同日が無い月（例: 1/31 の1ヶ月後）は翌月1日へ繰り上げる
+ */
+function addMonthsKey(dayKey: string, n: number): string {
+  const y = Number(dayKey.slice(0, 4))
+  const m = Number(dayKey.slice(5, 7))
+  const d = Number(dayKey.slice(8, 10))
+  const total = m - 1 + n
+  let y2 = y + Math.floor(total / 12)
+  let m2 = (((total % 12) + 12) % 12) + 1
+  if (d > daysInMonth(y2, m2)) {
+    m2 += 1
+    if (m2 > 12) {
+      m2 = 1
+      y2 += 1
+    }
+    return `${y2}-${pad2(m2)}-01`
+  }
+  return `${y2}-${pad2(m2)}-${pad2(d)}`
+}
+
 function makeDefaultPrefs(now = new Date()): LogPrefs {
   const t = todayKey(now)
   const { y, m } = ymParts(t)
@@ -100,12 +132,33 @@ function makeDefaultPrefs(now = new Date()): LogPrefs {
     kind: 'day',
     day: t,
     weekStart: mondayKeyOf(t),
-    monthYear: y,
-    month: m,
-    year: y,
+    monthStart: monthKey(y, m),
+    yearStart: monthKey(y, 1),
     customStart: t,
     customEnd: t,
     customApplied: null,
+  }
+}
+
+/** 保存済み設定の読み込み。旧形式（monthYear/month/year）からも移行する */
+function normalizePrefs(p: LogPrefs | null): LogPrefs | null {
+  if (!p) return null
+  const old = p as Partial<LogPrefs> & {
+    monthYear?: number
+    month?: number
+    year?: number
+  }
+  const def = makeDefaultPrefs()
+  return {
+    ...def,
+    ...p,
+    monthStart:
+      old.monthStart ??
+      (old.monthYear && old.month
+        ? monthKey(old.monthYear, old.month)
+        : def.monthStart),
+    yearStart:
+      old.yearStart ?? (old.year ? monthKey(old.year, 1) : def.yearStart),
   }
 }
 
@@ -183,22 +236,33 @@ function buildApplied(prefs: LogPrefs, nowMs: number, events: Event[]): AppliedR
     }
   }
   if (kind === 'month') {
-    const start = dayStartMs(monthKey(prefs.monthYear, prefs.month))
-    const endM = prefs.month === 12 ? 1 : prefs.month + 1
-    const endY = prefs.month === 12 ? prefs.monthYear + 1 : prefs.monthYear
+    // 基準日から1ヶ月間
+    const start = dayStartMs(prefs.monthStart)
+    const endKeyEx = addMonthsKey(prefs.monthStart, 1)
+    const lastKey = addDaysKey(endKeyEx, -1)
+    const { y, m } = ymParts(prefs.monthStart)
+    const isFirst = prefs.monthStart.slice(8, 10) === '01'
     return {
       kind,
       start,
-      end: dayStartMs(monthKey(endY, endM)),
-      label: `${prefs.monthYear}年${prefs.month}月`,
+      end: dayStartMs(endKeyEx),
+      label: isFirst
+        ? `${y}年${m}月`
+        : `${md(prefs.monthStart)}（${weekdayShort(prefs.monthStart)}）〜 ${md(lastKey)}（${weekdayShort(lastKey)}）`,
     }
   }
   if (kind === 'year') {
+    // 基準月から1年間
+    const { y, m } = ymParts(prefs.yearStart)
+    const lastYm = ymParts(addMonthsKey(prefs.yearStart, 11))
     return {
       kind,
-      start: dayStartMs(monthKey(prefs.year, 1)),
-      end: dayStartMs(monthKey(prefs.year + 1, 1)),
-      label: `${prefs.year}年`,
+      start: dayStartMs(prefs.yearStart),
+      end: dayStartMs(addMonthsKey(prefs.yearStart, 12)),
+      label:
+        m === 1
+          ? `${y}年`
+          : `${y}年${m}月 〜 ${lastYm.y}年${lastYm.m}月`,
     }
   }
   // custom: 未Applyなら当日1日
@@ -223,6 +287,7 @@ function MonthCalendar({
   mode,
   selectedDay,
   selectedWeekStart,
+  selectedMonthStart,
   highlightStart,
   highlightEnd,
   onPickDay,
@@ -230,9 +295,10 @@ function MonthCalendar({
 }: {
   viewYm: { y: number; m: number }
   onViewYm: (v: { y: number; m: number }) => void
-  mode: 'day' | 'week' | 'custom'
+  mode: 'day' | 'week' | 'month' | 'custom'
   selectedDay?: string
   selectedWeekStart?: string
+  selectedMonthStart?: string
   highlightStart?: string
   highlightEnd?: string
   onPickDay: (dayKey: string) => void
@@ -335,6 +401,12 @@ function MonthCalendar({
               day <= addDaysKey(selectedWeekStart, 6)
             selected = day === selectedWeekStart
           }
+          if (mode === 'month' && selectedMonthStart) {
+            inBand =
+              day >= selectedMonthStart &&
+              day < addMonthsKey(selectedMonthStart, 1)
+            selected = day === selectedMonthStart
+          }
           if (mode === 'custom' && hs && he) {
             inBand = day >= hs && day <= he
             selected = day === hs || day === he
@@ -362,7 +434,48 @@ function MonthCalendar({
   )
 }
 
+/** チップ表示中、グラフ外をタップしたら閉じる（出っ放し防止） */
+function useOutsideClose(
+  ref: { current: HTMLElement | null },
+  active: boolean,
+  onClose: () => void,
+) {
+  useEffect(() => {
+    if (!active) return
+    const onDown = (e: PointerEvent) => {
+      const t = e.target
+      if (ref.current && t instanceof Node && !ref.current.contains(t)) {
+        onClose()
+      }
+    }
+    document.addEventListener('pointerdown', onDown)
+    return () => document.removeEventListener('pointerdown', onDown)
+  }, [ref, active, onClose])
+}
+
+/** タップで出すタスク名チップ（スマホはホバーがないため） */
+function ChartTip({
+  tip,
+  onClose,
+}: {
+  tip: Slice | null
+  onClose: () => void
+}) {
+  if (!tip) return null
+  return (
+    <button type="button" className={styles.chartTip} onClick={onClose}>
+      <span className={styles.dot} style={{ background: tip.color }} />
+      <span>{tip.name}</span>
+      <span className={styles.chartTipTime}>{formatDurationHms(tip.sec)}</span>
+    </button>
+  )
+}
+
 function Donut({ slices, totalSec }: { slices: Slice[]; totalSec: number }) {
+  const [tip, setTip] = useState<Slice | null>(null)
+  const wrapRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => setTip(null), [slices])
+  useOutsideClose(wrapRef, tip !== null, () => setTip(null))
   const LABEL_FS = 11
   // ラベル文字列が外へ伸びる分のパディングを含めた viewBox
   const SIDE_PAD = 64
@@ -435,7 +548,7 @@ function Donut({ slices, totalSec }: { slices: Slice[]; totalSec: number }) {
   let drawAcc = 0
 
   return (
-    <div className={styles.donutWrap}>
+    <div className={styles.donutWrap} ref={wrapRef}>
       <svg
         className={styles.donut}
         viewBox={`0 0 ${VB_W} ${VB_H}`}
@@ -464,6 +577,8 @@ function Donut({ slices, totalSec }: { slices: Slice[]; totalSec: number }) {
               strokeWidth={STROKE}
               strokeDasharray={`${frac * C} ${C}`}
               transform={`rotate(${rot} ${CX} ${CY})`}
+              className={styles.donutSlice}
+              onClick={() => setTip((cur) => (cur?.id === s.id ? null : s))}
             />
           )
         })}
@@ -486,6 +601,7 @@ function Donut({ slices, totalSec }: { slices: Slice[]; totalSec: number }) {
           </g>
         ))}
       </svg>
+      <ChartTip tip={tip} onClose={() => setTip(null)} />
     </div>
   )
 }
@@ -494,11 +610,19 @@ function IndividualChart({
   columns,
   chartMode,
   onSeg,
+  tapName = false,
 }: {
   columns: Column[]
   chartMode: 'day' | 'stack'
   onSeg: (id: string) => void
+  /** true なら、セグメントのタップは編集でなく名前チップ表示（Year 用） */
+  tapName?: boolean
 }) {
+  const [tip, setTip] = useState<{ key: string; slice: Slice } | null>(null)
+  const wrapRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => setTip(null), [columns])
+  useOutsideClose(wrapRef, tip !== null, () => setTip(null))
+
   if (chartMode === 'day' && columns[0]) {
     const col = columns[0]
     const mid = col.start + DAY_MS / 2
@@ -559,39 +683,118 @@ function IndividualChart({
 
   const n = Math.max(columns.length, 1)
   return (
-    <div className={styles.stackChart}>
-      <div
-        className={styles.stackInner}
-        style={{
-          width: `${Math.min(100, n * 25)}%`,
-          gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))`,
-        }}
-      >
-        {columns.map((col) => {
-          const span = Math.max(1, col.end - col.start)
-          return (
-            <div key={col.key} className={styles.stackCol}>
-              <div className={styles.stackBar}>
-                {col.segs.map((s) => (
-                  <button
-                    key={`${s.eventId}-${s.start}`}
-                    type="button"
-                    className={styles.stackSeg}
-                    title={s.name}
-                    style={{
-                      bottom: `${((s.start - col.start) / span) * 100}%`,
-                      height: `${((s.end - s.start) / span) * 100}%`,
-                      background: s.color,
-                    }}
-                    onClick={() => onSeg(s.eventId)}
-                  />
-                ))}
+    <div className={styles.totalsWrap} ref={wrapRef}>
+      <div className={styles.stackChart}>
+        <div
+          className={styles.stackInner}
+          style={{
+            width: `${Math.min(100, n * 25)}%`,
+            gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))`,
+          }}
+        >
+          {columns.map((col) => {
+            const span = Math.max(1, col.end - col.start)
+            return (
+              <div key={col.key} className={styles.stackCol}>
+                <div className={styles.stackBar}>
+                  {col.segs.map((s) => {
+                    const segKey = `${s.eventId}-${s.start}`
+                    return (
+                      <button
+                        key={segKey}
+                        type="button"
+                        className={styles.stackSeg}
+                        style={{
+                          bottom: `${((s.start - col.start) / span) * 100}%`,
+                          height: `${((s.end - s.start) / span) * 100}%`,
+                          background: s.color,
+                        }}
+                        onClick={() => {
+                          if (!tapName) {
+                            onSeg(s.eventId)
+                            return
+                          }
+                          const slice: Slice = {
+                            id: segKey,
+                            name: s.name,
+                            color: s.color,
+                            sec: Math.floor((s.end - s.start) / 1000),
+                          }
+                          setTip((cur) =>
+                            cur?.key === segKey ? null : { key: segKey, slice },
+                          )
+                        }}
+                      />
+                    )
+                  })}
+                </div>
+                <span className={styles.stackLabel}>{col.label}</span>
               </div>
-              <span className={styles.stackLabel}>{col.label}</span>
-            </div>
-          )
-        })}
+            )
+          })}
+        </div>
       </div>
+      {tapName && (
+        <ChartTip tip={tip?.slice ?? null} onClose={() => setTip(null)} />
+      )}
+    </div>
+  )
+}
+
+function TotalsChart({ columns }: { columns: TotalCol[] }) {
+  const n = Math.max(columns.length, 1)
+  // タップで表示するタスク名（月単位の合算値）
+  const [tip, setTip] = useState<{ key: string; slice: Slice } | null>(null)
+  const wrapRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => setTip(null), [columns])
+  useOutsideClose(wrapRef, tip !== null, () => setTip(null))
+  return (
+    <div className={styles.totalsWrap} ref={wrapRef}>
+      <div className={styles.stackChart}>
+        <div
+          className={styles.stackInner}
+          style={{
+            width: `${Math.min(100, n * 25)}%`,
+            gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))`,
+          }}
+        >
+          {columns.map((col) => {
+            let acc = 0
+            return (
+              <div key={col.key} className={styles.stackCol}>
+                <div className={styles.stackBar}>
+                  {col.parts.map((p) => {
+                    const bottom = (acc / col.spanSec) * 100
+                    acc += p.sec
+                    const segKey = `${col.key}:${p.id}`
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className={styles.totalSeg}
+                        style={{
+                          bottom: `${bottom}%`,
+                          height: `${(p.sec / col.spanSec) * 100}%`,
+                          background: p.color,
+                        }}
+                        onClick={() =>
+                          setTip((cur) =>
+                            cur?.key === segKey
+                              ? null
+                              : { key: segKey, slice: p },
+                          )
+                        }
+                      />
+                    )
+                  })}
+                </div>
+                <span className={styles.stackLabel}>{col.label}</span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+      <ChartTip tip={tip?.slice ?? null} onClose={() => setTip(null)} />
     </div>
   )
 }
@@ -624,11 +827,12 @@ export function LogScreen() {
   const [now, setNow] = useState(() => Date.now())
   const [editId, setEditId] = useState<string | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  const [yearMode, setYearMode] = useState<'series' | 'total'>('series')
 
-  // settings から復元
+  // settings から復元（旧形式の設定も正規化して受け入れる）
   useEffect(() => {
     if (loading) return
-    const next = logPrefs ?? makeDefaultPrefs()
+    const next = normalizePrefs(logPrefs) ?? makeDefaultPrefs()
     setPrefs(next)
     setPrefsReady(true)
   }, [loading, logPrefs])
@@ -660,8 +864,7 @@ export function LogScreen() {
     setCustomTarget('start')
     if (prefs.kind === 'day') setViewYm(ymParts(prefs.day))
     else if (prefs.kind === 'week') setViewYm(ymParts(prefs.weekStart))
-    else if (prefs.kind === 'month')
-      setViewYm({ y: prefs.monthYear, m: prefs.month })
+    else if (prefs.kind === 'month') setViewYm(ymParts(prefs.monthStart))
     else if (prefs.kind === 'custom') {
       const s = prefs.customApplied?.start ?? prefs.customStart
       setViewYm(ymParts(s))
@@ -719,6 +922,29 @@ export function LogScreen() {
     setDetailOpen(false)
   }
 
+  // ←→ の期間送り（Day: 1日 / Week: 7日 / Month: 1月 / Year: 1年）
+  const stepRange = (dir: 1 | -1) => {
+    const k = prefs.kind
+    if (k === 'day') {
+      const d = addDaysKey(prefs.day, dir)
+      if (ymParts(d).y > ty) return
+      void persist({ ...prefs, day: d })
+    } else if (k === 'week') {
+      const d = addDaysKey(prefs.weekStart, dir * 7)
+      if (ymParts(d).y > ty) return
+      void persist({ ...prefs, weekStart: d })
+    } else if (k === 'month') {
+      const d = addMonthsKey(prefs.monthStart, dir)
+      if (ymParts(d).y > ty) return
+      void persist({ ...prefs, monthStart: d })
+    } else if (k === 'year') {
+      const d = addMonthsKey(prefs.yearStart, dir * 12)
+      const y = ymParts(d).y
+      if (y > ty || y < 1970) return
+      void persist({ ...prefs, yearStart: d })
+    }
+  }
+
   const {
     taskSlices,
     folderSlices,
@@ -726,6 +952,7 @@ export function LogScreen() {
     pieFolderSlices,
     totalSec,
     columns,
+    totalColumns,
     chartMode,
     dayEvents,
   } =
@@ -808,36 +1035,82 @@ export function LogScreen() {
           },
         ]
       } else if (k === 'year') {
-        const y = Number(dateKey(nowIso(new Date(start))).slice(0, 4))
-        for (let m = 1; m <= 12; m++) {
-          const cs = dayStartMs(monthKey(y, m))
-          const nm = m === 12 ? 1 : m + 1
-          const ny = m === 12 ? y + 1 : y
-          const ce = dayStartMs(monthKey(ny, nm))
+        // 基準月から12ヶ月分
+        const baseKey = dateKey(nowIso(new Date(start)))
+        for (let i = 0; i < 12; i++) {
+          const csKey = addMonthsKey(baseKey, i)
+          const ceKey = addMonthsKey(baseKey, i + 1)
+          const cs = dayStartMs(csKey)
+          const ce = dayStartMs(ceKey)
           columns.push({
-            key: `${y}-${m}`,
-            label: `${m}`,
+            key: csKey,
+            label: String(Number(csKey.slice(5, 7))),
             start: cs,
             end: ce,
             segs: clipSegs(events, tasks, folders, cs, ce, now),
           })
         }
-      } else {
+      } else if (k === 'week' || k === 'month') {
         let cursor = dateKey(nowIso(new Date(start)))
         const lastDay = dateKey(nowIso(new Date(end - 1)))
         let guard = 0
         while (guard++ < 400 && cursor <= lastDay) {
           const cs = dayStartMs(cursor)
           const ce = cs + DAY_MS
+          const dayNum = Number(cursor.slice(8, 10))
           columns.push({
             key: cursor,
-            label: String(Number(cursor.slice(8, 10))),
+            // Month は全日表示だとラベルが重なるので間引く
+            label:
+              k === 'month'
+                ? MONTH_LABEL_DAYS.includes(dayNum)
+                  ? String(dayNum)
+                  : ''
+                : String(dayNum),
             start: cs,
             end: ce,
             segs: clipSegs(events, tasks, folders, cs, ce, now),
           })
           cursor = addDaysKey(cursor, 1)
         }
+      }
+      // custom はサマリーなし（期間が可変で件数も多くなり得るため）
+
+      // Year の「合計」表示: 月ごとのタスク合算棒。積み順は年内の初出現順（下から）
+      let totalColumns: TotalCol[] = []
+      if (k === 'year') {
+        totalColumns = columns.map((col) => {
+          const m = new Map<string, Slice>()
+          for (const ev of events) {
+            const s = new Date(ev.startedAt).getTime()
+            const e = ev.endedAt ? new Date(ev.endedAt).getTime() : now
+            const a = Math.max(s, col.start)
+            const b = Math.min(e, col.end)
+            if (!(b > a)) continue
+            const sec = Math.floor((b - a) / 1000)
+            if (sec <= 0) continue
+            const d = resolveDisplay(ev, tasks, folders)
+            const cur = m.get(d.taskId)
+            if (cur) cur.sec += sec
+            else
+              m.set(d.taskId, {
+                id: d.taskId,
+                name: d.taskName,
+                color: d.taskColor,
+                sec,
+              })
+          }
+          const parts = [...m.values()].sort(
+            (a, b) =>
+              (firstByTask.get(a.id) ?? 0) - (firstByTask.get(b.id) ?? 0),
+          )
+          return {
+            key: col.key,
+            label: col.label,
+            spanSec: (col.end - col.start) / 1000,
+            parts,
+          }
+        })
       }
 
       return {
@@ -847,6 +1120,7 @@ export function LogScreen() {
         pieFolderSlices,
         totalSec,
         columns,
+        totalColumns,
         chartMode,
         dayEvents,
       }
@@ -891,17 +1165,39 @@ export function LogScreen() {
       </div>
 
       {prefs.kind !== 'all' && (
-        <button
-          type="button"
-          ref={rangeBtnRef}
-          className={styles.rangeBtn}
-          onClick={openPicker}
-        >
-          <span className={styles.rangeLabel}>{applied.label}</span>
-          <span className={styles.chevron} aria-hidden>
-            ▾
-          </span>
-        </button>
+        <div className={styles.rangeRow}>
+          {prefs.kind !== 'custom' && (
+            <button
+              type="button"
+              className={styles.stepBtn}
+              aria-label="前へ"
+              onClick={() => stepRange(-1)}
+            >
+              ←
+            </button>
+          )}
+          <button
+            type="button"
+            ref={rangeBtnRef}
+            className={styles.rangeBtn}
+            onClick={openPicker}
+          >
+            <span className={styles.rangeLabel}>{applied.label}</span>
+            <span className={styles.chevron} aria-hidden>
+              ▾
+            </span>
+          </button>
+          {prefs.kind !== 'custom' && (
+            <button
+              type="button"
+              className={styles.stepBtn}
+              aria-label="次へ"
+              onClick={() => stepRange(1)}
+            >
+              →
+            </button>
+          )}
+        </div>
       )}
 
       <div className={styles.totalLine}>
@@ -911,20 +1207,43 @@ export function LogScreen() {
 
       <hr className={styles.rule} />
 
-      {prefs.kind !== 'all' && (
+      {prefs.kind !== 'all' && prefs.kind !== 'custom' && (
         <>
           <h2 className={styles.sectionTitle}>Summary</h2>
           <div className={styles.panel}>
             {totalSec === 0 ? (
-              <p className={styles.status}>この期間の記録はありません。</p>
+              <p className={styles.status}>No Data</p>
+            ) : prefs.kind === 'year' && yearMode === 'total' ? (
+              <TotalsChart columns={totalColumns} />
             ) : (
               <IndividualChart
                 columns={columns}
                 chartMode={chartMode}
                 onSeg={setEditId}
+                tapName={prefs.kind === 'year'}
               />
             )}
           </div>
+          {prefs.kind === 'year' && totalSec > 0 && (
+            <div className={styles.modeBtns}>
+              <button
+                type="button"
+                data-text="時系列"
+                className={yearMode === 'series' ? styles.modeOn : styles.modeBtn}
+                onClick={() => setYearMode('series')}
+              >
+                時系列
+              </button>
+              <button
+                type="button"
+                data-text="合計"
+                className={yearMode === 'total' ? styles.modeOn : styles.modeBtn}
+                onClick={() => setYearMode('total')}
+              >
+                合計
+              </button>
+            </div>
+          )}
           {prefs.kind === 'day' && totalSec > 0 && (
             <>
               <button
@@ -982,7 +1301,7 @@ export function LogScreen() {
 
       <h2 className={styles.sectionTitle}>Tasks</h2>
       {totalSec === 0 ? (
-        <p className={styles.status}>この期間の記録はありません。</p>
+        <p className={styles.status}>No Data</p>
       ) : (
         <>
           <div className={styles.pieCenter}>
@@ -1016,7 +1335,7 @@ export function LogScreen() {
 
       <h2 className={styles.sectionTitle}>Genres</h2>
       {totalSec === 0 ? (
-        <p className={styles.status}>この期間の記録はありません。</p>
+        <p className={styles.status}>No Data</p>
       ) : (
         <>
           <div className={styles.pieCenter}>
@@ -1046,7 +1365,10 @@ export function LogScreen() {
         </>
       )}
 
-      {pickerOpen && prefs.kind !== 'all' && sheetPos && (
+      {pickerOpen &&
+        prefs.kind !== 'all' &&
+        sheetPos &&
+        createPortal(
         <div className={styles.modalRoot}>
           <button
             type="button"
@@ -1100,6 +1422,7 @@ export function LogScreen() {
 
             {(draft.kind === 'day' ||
               draft.kind === 'week' ||
+              draft.kind === 'month' ||
               draft.kind === 'custom') && (
               <MonthCalendar
                 viewYm={viewYm}
@@ -1107,17 +1430,27 @@ export function LogScreen() {
                 mode={draft.kind}
                 selectedDay={draft.day}
                 selectedWeekStart={draft.weekStart}
+                selectedMonthStart={draft.monthStart}
                 highlightStart={draft.customStart}
                 highlightEnd={draft.customEnd}
                 maxYear={ty}
                 onPickDay={(d) => {
+                  // Day/Week/Month は選んだ時点で即適用（Apply 不要）
                   if (draft.kind === 'day') {
                     setDraft({ ...draft, day: d })
                     setViewYm(ymParts(d))
+                    setPickerOpen(false)
+                    void persist({ ...prefs, day: d })
                   } else if (draft.kind === 'week') {
                     // クリックした日から7日間（何曜日始まりでも可）
                     setDraft({ ...draft, weekStart: d })
                     setViewYm(ymParts(d))
+                    void persist({ ...prefs, weekStart: d })
+                  } else if (draft.kind === 'month') {
+                    // クリックした日から1ヶ月間
+                    setDraft({ ...draft, monthStart: d })
+                    setViewYm(ymParts(d))
+                    void persist({ ...prefs, monthStart: d })
                   } else if (customTarget === 'start') {
                     setDraft({
                       ...draft,
@@ -1135,35 +1468,39 @@ export function LogScreen() {
               />
             )}
 
-            {draft.kind === 'month' && (
+            {draft.kind === 'year' && (
               <div className={styles.monthPick}>
                 <div className={styles.calHead}>
                   <div className={styles.calNav}>
                     <button
                       type="button"
                       className={styles.arrow}
-                      onClick={() =>
+                      onClick={() => {
+                        const ys = ymParts(draft.yearStart)
                         setDraft({
                           ...draft,
-                          monthYear: draft.monthYear - 1,
+                          yearStart: monthKey(ys.y - 1, ys.m),
                         })
-                      }
+                      }}
                     >
                       «
                     </button>
                   </div>
-                  <span className={styles.calTitle}>{draft.monthYear}年</span>
+                  <span className={styles.calTitle}>
+                    {ymParts(draft.yearStart).y}年
+                  </span>
                   <div className={styles.calNav}>
                     <button
                       type="button"
                       className={styles.arrow}
-                      disabled={draft.monthYear >= ty}
-                      onClick={() =>
+                      disabled={ymParts(draft.yearStart).y >= ty}
+                      onClick={() => {
+                        const ys = ymParts(draft.yearStart)
                         setDraft({
                           ...draft,
-                          monthYear: Math.min(ty, draft.monthYear + 1),
+                          yearStart: monthKey(Math.min(ty, ys.y + 1), ys.m),
                         })
-                      }
+                      }}
                     >
                       »
                     </button>
@@ -1172,14 +1509,20 @@ export function LogScreen() {
                 <div className={styles.monthGrid}>
                   {MONTH_NAMES.map((name, i) => {
                     const m = i + 1
+                    const ys = ymParts(draft.yearStart)
                     return (
                       <button
                         key={name}
                         type="button"
                         className={
-                          draft.month === m ? styles.monthOn : styles.monthBtn
+                          ys.m === m ? styles.monthOn : styles.monthBtn
                         }
-                        onClick={() => setDraft({ ...draft, month: m })}
+                        onClick={() => {
+                          // 選んだ時点で即適用（閉じるのは画面外タップ）
+                          const k = monthKey(ys.y, m)
+                          setDraft({ ...draft, yearStart: k })
+                          void persist({ ...prefs, yearStart: k })
+                        }}
                       >
                         {name}
                       </button>
@@ -1189,43 +1532,20 @@ export function LogScreen() {
               </div>
             )}
 
-            {draft.kind === 'year' && (
-              <div className={styles.yearPick}>
+            {draft.kind === 'custom' && (
+              <div className={styles.sheetActions}>
                 <button
                   type="button"
-                  className={styles.arrow}
-                  onClick={() => setDraft({ ...draft, year: draft.year - 1 })}
+                  className={styles.primary}
+                  onClick={applyPicker}
                 >
-                  «
-                </button>
-                <span className={styles.yearValue}>{draft.year}</span>
-                <button
-                  type="button"
-                  className={styles.arrow}
-                  disabled={draft.year >= ty}
-                  onClick={() =>
-                    setDraft({
-                      ...draft,
-                      year: Math.min(ty, draft.year + 1),
-                    })
-                  }
-                >
-                  »
+                  Apply
                 </button>
               </div>
             )}
-
-            <div className={styles.sheetActions}>
-              <button
-                type="button"
-                className={styles.primary}
-                onClick={applyPicker}
-              >
-                Apply
-              </button>
-            </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {editId && (

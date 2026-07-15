@@ -3,7 +3,7 @@
   flex-direction: column;
   gap: 12px;
   /* 下部固定バーぶんの逃げ */
-  padding-bottom: 76px;
+  padding-bottom: calc(48px + var(--safe-bottom));
 }
 
 .status,
@@ -172,20 +172,31 @@
   z-index: 50;
   display: flex;
   justify-content: center;
-  padding: 8px 16px calc(8px + var(--safe-bottom));
+  padding: 2px 16px calc(2px + var(--safe-bottom));
   background: var(--bg);
   border-top: 1px solid var(--line);
 }
 
+/* キーボード等で画面がずれてもバー下に隙間が見えないよう、下方向へ地の色を延長 */
+.addBar::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: 120px;
+  background: var(--bg);
+}
+
 .plus {
-  width: 48px;
-  height: 48px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  font-size: 1.5rem;
+  border: none;
+  background: transparent;
+  height: 36px;
+  padding: 0 24px;
+  font-size: 1.2rem;
+  font-weight: 700;
   line-height: 1;
-  color: var(--fg);
+  color: #fff;
 }
 
 .plus:disabled {
@@ -250,15 +261,25 @@
   align-items: stretch;
 }
 
+/* 日付・時刻ボックスがはみ出して重ならないように */
+.dateTimeRow > * {
+  min-width: 0;
+}
+
 .field input,
 .field select {
   width: 100%;
+  min-width: 0;
+  height: 44px;
+  box-sizing: border-box;
   border-radius: 8px;
   border: 1px solid var(--line);
   background: var(--panel-2);
   color: var(--fg);
-  padding: 10px 12px;
+  padding: 0 12px;
   font: inherit;
+  /* iOS のフォーカスズーム防止＋TimeField と高さを揃える */
+  font-size: 16px;
   font-variant-numeric: tabular-nums;
 }
 

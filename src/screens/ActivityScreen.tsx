@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { FolderIcon } from '../components/FolderIcon'
 import { FolderSelect } from '../components/FolderSelect'
 import { TaskSelect } from '../components/TaskSelect'
@@ -156,6 +157,21 @@ export function ActivityScreen() {
 
   const pageEvents = useMemo(() => events.slice(0, visible), [events, visible])
 
+  // 色だけはスナップショットでなく ID で最新のマスタ色を使う（調整が多いため）
+  const taskById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
+  const folderById = useMemo(
+    () => new Map(folders.map((f) => [f.id, f])),
+    [folders],
+  )
+  const liveColors = (ev: Event) => {
+    const task = taskById.get(ev.taskId)
+    const folder = folderById.get(task?.folderId ?? ev.folderId)
+    return {
+      taskColor: task?.color ?? ev.taskColor,
+      folderColor: folder?.color ?? ev.folderColor,
+    }
+  }
+
   const groups = useMemo(() => {
     const map = new Map<string, DayGroup>()
     for (const ev of pageEvents) {
@@ -303,7 +319,9 @@ export function ActivityScreen() {
                 <span className={styles.dateRuleLine} />
               </div>
               <ul className={styles.list}>
-                {g.events.map((ev) => (
+                {g.events.map((ev) => {
+                  const colors = liveColors(ev)
+                  return (
                   <li key={ev.id}>
                     <button
                       type="button"
@@ -315,12 +333,12 @@ export function ActivityScreen() {
                         <div className={styles.titleLine}>
                           <span
                             className={styles.swatch}
-                            style={{ background: ev.taskColor }}
+                            style={{ background: colors.taskColor }}
                             aria-hidden
                           />
                           <span className={styles.taskName}>{ev.taskName}</span>
                           <span className={styles.folderMark} aria-hidden>
-                            <FolderIcon color={ev.folderColor} size={14} />
+                            <FolderIcon color={colors.folderColor} size={14} />
                           </span>
                           <span className={styles.folderName}>
                             {ev.folderName}
@@ -338,7 +356,8 @@ export function ActivityScreen() {
                       </span>
                     </button>
                   </li>
-                ))}
+                  )
+                })}
               </ul>
             </div>
           ))}
@@ -359,7 +378,8 @@ export function ActivityScreen() {
         </button>
       </div>
 
-      {sheetOpen && (
+      {sheetOpen &&
+        createPortal(
         <div className={styles.modalRoot}>
           <button
             type="button"
@@ -478,7 +498,8 @@ export function ActivityScreen() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </section>
   )

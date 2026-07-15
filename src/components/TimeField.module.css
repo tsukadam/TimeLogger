@@ -9,13 +9,18 @@
   align-items: center;
   gap: 8px;
   width: 100%;
+  min-width: 0;
+  height: 44px;
+  box-sizing: border-box;
   text-align: left;
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 0 12px;
   background: var(--panel-2);
   color: var(--fg);
   font: inherit;
+  /* 日付 input と高さ・文字サイズを揃える */
+  font-size: 16px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -32,6 +37,13 @@
   margin-left: auto;
   color: var(--muted);
   font-size: 0.85rem;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 399;
+  background: transparent;
 }
 
 .panel {

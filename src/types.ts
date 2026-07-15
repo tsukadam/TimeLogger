@@ -47,9 +47,10 @@ export type LogPrefs = {
   kind: LogKind
   day: string
   weekStart: string
-  monthYear: number
-  month: number
-  year: number
+  /** Month の基準日。この日から1ヶ月間 */
+  monthStart: string
+  /** Year の基準月（その月の1日）。この月から1年間 */
+  yearStart: string
   /** Custom 下書き（モーダル上） */
   customStart: string
   customEnd: string

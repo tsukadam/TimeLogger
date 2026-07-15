@@ -3,7 +3,53 @@
   flex-direction: column;
   gap: 12px;
   /* 下部固定バーぶんの逃げ */
-  padding-bottom: 76px;
+  padding-bottom: calc(48px + var(--safe-bottom));
+}
+
+/* 記録中タスクが画面外にあるときの案内ピル（高さ0で挟み、レイアウトに影響させない） */
+.stickyTop,
+.stickyBottom {
+  position: sticky;
+  z-index: 30;
+  height: 0;
+  overflow: visible;
+}
+
+.stickyTop {
+  top: 0;
+  /* .root の gap ぶんを相殺 */
+  margin-bottom: -12px;
+}
+
+.stickyBottom {
+  /* 下部固定バーの上に出す */
+  bottom: calc(48px + var(--safe-bottom));
+  margin-top: -12px;
+}
+
+.runningPill {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--fg);
+  font-size: 0.8rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.stickyTop .runningPill {
+  top: 4px;
+}
+
+.stickyBottom .runningPill {
+  bottom: 4px;
 }
 
 .status,
@@ -191,7 +237,7 @@
 }
 
 .taskName {
-  font-weight: 650;
+  font-weight: 400;
 }
 
 .todayTotal {
@@ -210,20 +256,31 @@
   z-index: 50;
   display: flex;
   justify-content: center;
-  padding: 8px 16px calc(8px + var(--safe-bottom));
+  padding: 2px 16px calc(2px + var(--safe-bottom));
   background: var(--bg);
   border-top: 1px solid var(--line);
 }
 
+/* キーボード等で画面がずれてもバー下に隙間が見えないよう、下方向へ地の色を延長 */
+.addBar::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: 120px;
+  background: var(--bg);
+}
+
 .plus {
-  width: 48px;
-  height: 48px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  font-size: 1.5rem;
+  border: none;
+  background: transparent;
+  height: 36px;
+  padding: 0 24px;
+  font-size: 1.2rem;
+  font-weight: 700;
   line-height: 1;
-  color: var(--fg);
+  color: #fff;
 }
 
 .plus:disabled {
@@ -249,10 +306,10 @@
   cursor: default;
 }
 
-/* 空フォルダ内のタスク追加ボタン（タスク行の代わり） */
+/* 空フォルダ内のタスク追加ボタン（タスク行の代わり）。下部＋と同じ縦幅 */
 .addTaskInFolder {
   width: 100%;
-  min-height: 48px;
+  height: 36px;
   border-radius: 8px;
   border: 1px dashed var(--line);
   background: transparent;
@@ -316,30 +373,30 @@
   width: 100%;
 }
 
-/* 28px 固定・左詰め。右に余白を残し、＋がはみ出る */
+/* 24px 固定・左詰め。右に余白を残し、＋がはみ出る */
 .colorGridWrap {
   position: relative;
   display: inline-block;
   max-width: 100%;
-  /* 12×28 + 11×8gap = 424px の右に＋用余白 */
-  padding-right: 36px;
+  /* 9×24 + 8×6gap = 264px の右に＋用余白 */
+  padding-right: 32px;
 }
 
 .colorGrid {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  /* 1行あたり12マス。狭い画面では改行して崩れるが個人用途で可 */
-  width: calc(12 * 28px + 11 * 8px);
+  gap: 6px;
+  /* 1行あたり9マス。狭い画面では改行して崩れるが個人用途で可 */
+  width: calc(9 * 24px + 8 * 6px);
   max-width: 100%;
 }
 
 .color,
 .colorActive,
 .colorSwatch {
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
   border-radius: 999px;
   border: 2px solid transparent;
   padding: 0;
@@ -369,9 +426,9 @@
 
 .pickerWrap {
   position: relative;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
   border-radius: 999px;
   overflow: hidden;
   cursor: pointer;

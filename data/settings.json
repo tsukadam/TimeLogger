@@ -1,17 +1,19 @@
 {
-    "updatedAt": "2026-07-15T10:50:40+09:00",
+    "updatedAt": "2026-07-15T14:07:24+09:00",
     "log": {
         "kind": "day",
-        "day": "2026-07-14",
-        "weekStart": "2026-07-29",
-        "monthYear": 2026,
-        "month": 7,
-        "year": 2026,
-        "customStart": "2026-07-01",
+        "day": "2026-07-16",
+        "weekStart": "2026-06-03",
+        "monthStart": "2026-01-02",
+        "yearStart": "2025-06-01",
+        "customStart": "2026-05-01",
         "customEnd": "2026-07-15",
         "customApplied": {
-            "start": "2026-07-01",
+            "start": "2026-05-01",
             "end": "2026-07-15"
-        }
+        },
+        "monthYear": 2026,
+        "month": 1,
+        "year": 2025
     }
 }

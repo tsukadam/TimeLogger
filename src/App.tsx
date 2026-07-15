@@ -47,17 +47,16 @@ export default function App() {
           <div className={styles.brand}>TimeLogger</div>
           <nav className={styles.nav}>
             {route === 'main' ? (
-              <>
-                <button type="button" onClick={() => setRoute('log')}>
-                  Log
-                </button>
-                <button type="button" onClick={() => setRoute('settings')}>
-                  Setting
-                </button>
-              </>
+              <button type="button" onClick={() => setRoute('log')}>
+                Log
+              </button>
             ) : (
-              <button type="button" onClick={() => setRoute('main')}>
-                Back
+              <button
+                type="button"
+                aria-label="戻る"
+                onClick={() => setRoute('main')}
+              >
+                ←
               </button>
             )}
           </nav>

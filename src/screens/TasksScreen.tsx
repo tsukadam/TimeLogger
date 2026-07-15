@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { FolderIcon } from '../components/FolderIcon'
 import { FolderSelect } from '../components/FolderSelect'
 import { FOLDER_PALETTE, TASK_BASE_CELL, findTaskColorPos, taskColorGrid } from '../lib/color'
@@ -162,6 +163,47 @@ export function TasksScreen() {
       tasks: tasks.filter((t) => t.folderId === folder.id),
     }))
   }, [folders, tasks])
+
+  // 記録中タスクが画面外にあるとき、上下どちらにあるかを示す
+  const runningTaskId = current?.taskId ?? null
+  const [runningOff, setRunningOff] = useState<'above' | 'below' | null>(null)
+
+  useEffect(() => {
+    if (!runningTaskId) {
+      setRunningOff(null)
+      return
+    }
+    const el = document.querySelector(`[data-task-id="${runningTaskId}"]`)
+    if (!el) {
+      setRunningOff(null)
+      return
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        const e = entries[entries.length - 1]
+        if (!e) return
+        if (e.isIntersecting) {
+          setRunningOff(null)
+        } else {
+          setRunningOff(
+            e.boundingClientRect.top < window.innerHeight / 2
+              ? 'above'
+              : 'below',
+          )
+        }
+      },
+      { threshold: 0 },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [runningTaskId, folders, tasks])
+
+  const scrollToRunning = () => {
+    if (!runningTaskId) return
+    document
+      .querySelector(`[data-task-id="${runningTaskId}"]`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
 
   function closeSheet() {
     setSheet({ type: 'closed' })
@@ -329,6 +371,18 @@ export function TasksScreen() {
         </div>
       )}
 
+      {runningOff === 'above' && (
+        <div className={styles.stickyTop}>
+          <button
+            type="button"
+            className={styles.runningPill}
+            onClick={scrollToRunning}
+          >
+            ↑ 1 task running
+          </button>
+        </div>
+      )}
+
       {byFolder.map(({ folder, tasks: folderTasks }, index) => (
         <section key={folder.id} className={styles.folderSection}>
           {index > 0 && <div className={styles.divider} />}
@@ -357,7 +411,7 @@ export function TasksScreen() {
               const running = current?.taskId === task.id
               const todaySec = todaySecByTask.get(task.id) ?? 0
               return (
-                <li key={task.id} className={styles.taskRow}>
+                <li key={task.id} className={styles.taskRow} data-task-id={task.id}>
                   <button
                     type="button"
                     className={running ? styles.recStop : styles.recStart}
@@ -406,6 +460,18 @@ export function TasksScreen() {
         <p className={styles.hint}>＋ からフォルダを追加</p>
       )}
 
+      {runningOff === 'below' && (
+        <div className={styles.stickyBottom}>
+          <button
+            type="button"
+            className={styles.runningPill}
+            onClick={scrollToRunning}
+          >
+            ↓ 1 task running
+          </button>
+        </div>
+      )}
+
       <div className={styles.addBar}>
         <button
           type="button"
@@ -418,7 +484,8 @@ export function TasksScreen() {
         </button>
       </div>
 
-      {sheetOpen && (
+      {sheetOpen &&
+        createPortal(
         <div className={styles.modalRoot}>
           <button
             type="button"
@@ -497,7 +564,6 @@ export function TasksScreen() {
               onChange={(e) => setName(e.target.value)}
               placeholder={addKind === 'folder' ? 'フォルダ名' : 'タスク名'}
               disabled={busy}
-              autoFocus
             />
           </label>
 
@@ -617,7 +683,8 @@ export function TasksScreen() {
             </div>
           </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </section>
   )

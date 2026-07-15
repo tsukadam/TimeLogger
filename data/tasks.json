@@ -1,128 +1,473 @@
 {
     "folders": [
         {
-            "id": "386f453c-5312-4e39-8536-5ec1a4f6faed",
-            "name": "test",
-            "color": "#e25b5b",
+            "id": "32232892-cbf5-4c23-95fb-b16d418376c8",
+            "name": "生活",
+            "color": "#08d415",
             "sortOrder": 0,
-            "createdAt": "2026-07-14T19:16:13+09:00",
-            "updatedAt": "2026-07-14T21:35:13.081+09:00"
+            "createdAt": "2024-01-12T02:34:36+09:00",
+            "updatedAt": "2026-07-15T11:39:16.837+09:00"
         },
         {
-            "id": "082c0ac3-2ed0-4990-9e17-75148feda0c3",
-            "name": "test2",
-            "color": "#5bb98c",
+            "id": "fb5277a8-b142-4206-b790-1d4205a56ea6",
+            "name": "宗教",
+            "color": "#befdfe",
             "sortOrder": 1,
-            "createdAt": "2026-07-14T19:16:31+09:00",
-            "updatedAt": "2026-07-14T19:16:31+09:00"
+            "createdAt": "2024-01-12T03:00:10+09:00",
+            "updatedAt": "2026-07-15T11:39:27.820+09:00"
         },
         {
-            "id": "c187c8c1-2a17-46ac-b4b0-87625d33f4f2",
-            "name": "テスト",
-            "color": "#5b8de2",
+            "id": "20e57d55-3783-4e6e-a601-4c120f29b542",
+            "name": "休憩",
+            "color": "#9b33f0",
             "sortOrder": 2,
-            "createdAt": "2026-07-14T19:56:07+09:00",
-            "updatedAt": "2026-07-14T19:56:07+09:00"
+            "createdAt": "2024-01-12T03:19:07+09:00",
+            "updatedAt": "2026-07-15T11:39:37.820+09:00"
         },
         {
-            "id": "e27e2223-7e53-4686-bbef-0c0bd15dc394",
-            "name": "テスト！",
-            "color": "#662deb",
+            "id": "2a0256ad-d958-49b0-966f-b12faae89a26",
+            "name": "漫画",
+            "color": "#ff384c",
             "sortOrder": 3,
-            "createdAt": "2026-07-14T21:00:24.557+09:00",
-            "updatedAt": "2026-07-14T21:00:24.557+09:00"
+            "createdAt": "2024-01-12T03:42:13+09:00",
+            "updatedAt": "2026-07-15T11:40:09.980+09:00"
         },
         {
-            "id": "f1dd77b7-45bf-4560-869e-a42b69d59976",
-            "name": "てす",
-            "color": "#a67c7c",
+            "id": "be956adf-798b-4115-a5b2-ed5d96438cea",
+            "name": "仕事",
+            "color": "#387aff",
             "sortOrder": 4,
-            "createdAt": "2026-07-14T22:11:50.780+09:00",
-            "updatedAt": "2026-07-14T22:11:50.780+09:00"
+            "createdAt": "2024-01-12T11:56:36+09:00",
+            "updatedAt": "2026-07-15T11:42:12.618+09:00"
+        },
+        {
+            "id": "22d2687e-1990-487b-9147-ef3341eb267c",
+            "name": "音楽",
+            "color": "#543dff",
+            "sortOrder": 5,
+            "createdAt": "2024-01-12T13:58:50+09:00",
+            "updatedAt": "2026-07-15T11:40:33.611+09:00"
+        },
+        {
+            "id": "0e4bee43-1450-4a06-978b-e60eeca1b1be",
+            "name": "睡眠",
+            "color": "#598b97",
+            "sortOrder": 6,
+            "createdAt": "2024-01-12T22:16:55+09:00",
+            "updatedAt": "2026-07-15T11:41:04.043+09:00"
+        },
+        {
+            "id": "3b197bfc-39df-4c87-990c-8b17bd160585",
+            "name": "インプット",
+            "color": "#e83ba0",
+            "sortOrder": 7,
+            "createdAt": "2024-01-14T20:00:00+09:00",
+            "updatedAt": "2026-07-15T11:41:16.515+09:00"
+        },
+        {
+            "id": "60897f71-db97-4f6f-8c03-47bf46f173d5",
+            "name": "イベント",
+            "color": "#e3ee3f",
+            "sortOrder": 8,
+            "createdAt": "2024-01-28T09:20:53+09:00",
+            "updatedAt": "2026-07-15T11:41:36.146+09:00"
+        },
+        {
+            "id": "24f4daa9-16dc-4325-b6f3-e62536332832",
+            "name": "その他制作",
+            "color": "#ce3de1",
+            "sortOrder": 9,
+            "createdAt": "2024-03-19T03:12:22+09:00",
+            "updatedAt": "2026-07-15T11:41:55.538+09:00"
+        },
+        {
+            "id": "9e2f0743-5404-494b-826f-d129f53006ee",
+            "name": "運動",
+            "color": "#e88e3b",
+            "sortOrder": 10,
+            "createdAt": "2024-05-01T03:35:48+09:00",
+            "updatedAt": "2026-07-15T11:42:23.961+09:00"
         }
     ],
     "tasks": [
         {
-            "id": "c1175b41-7e9e-4f3a-bba8-e90705db67d1",
-            "folderId": "386f453c-5312-4e39-8536-5ec1a4f6faed",
-            "name": "action",
-            "color": "#e25b5b",
+            "id": "f40934b2-98cc-4448-806f-02e02fd4a1b7",
+            "folderId": "32232892-cbf5-4c23-95fb-b16d418376c8",
+            "name": "料理・食事",
+            "color": "#08d415",
             "sortOrder": 0,
-            "createdAt": "2026-07-14T19:16:24+09:00",
-            "updatedAt": "2026-07-14T21:35:13.081+09:00"
+            "createdAt": "2024-01-12T02:34:36+09:00",
+            "updatedAt": "2026-07-15T11:39:16.837+09:00"
         },
         {
-            "id": "8854ae87-aba5-4ae0-8cf2-8b238d00e76c",
-            "folderId": "082c0ac3-2ed0-4990-9e17-75148feda0c3",
-            "name": "action2",
-            "color": "#5bb98c",
+            "id": "e70ebd31-d89f-4a44-b9ee-9d78787153ae",
+            "folderId": "fb5277a8-b142-4206-b790-1d4205a56ea6",
+            "name": "聖書・礼拝",
+            "color": "#befdfe",
             "sortOrder": 0,
-            "createdAt": "2026-07-14T19:16:36+09:00",
-            "updatedAt": "2026-07-14T19:16:36+09:00"
+            "createdAt": "2024-01-12T03:00:10+09:00",
+            "updatedAt": "2026-07-15T11:39:27.820+09:00"
         },
         {
-            "id": "ad61a0bf-f7d6-4276-8540-bc3c943c824a",
-            "folderId": "386f453c-5312-4e39-8536-5ec1a4f6faed",
-            "name": "テスート",
-            "color": "#6cc45a",
+            "id": "072d6a24-1918-47a8-9532-ea616154b1c9",
+            "folderId": "20e57d55-3783-4e6e-a601-4c120f29b542",
+            "name": "休憩・SNS",
+            "color": "#9b33f0",
+            "sortOrder": 0,
+            "createdAt": "2024-01-12T03:19:07+09:00",
+            "updatedAt": "2026-07-15T11:39:37.820+09:00"
+        },
+        {
+            "id": "80caba63-2518-4807-94e8-2648e03866a2",
+            "folderId": "2a0256ad-d958-49b0-966f-b12faae89a26",
+            "name": "ジェスドロなど練習",
+            "color": "#ff384c",
+            "sortOrder": 0,
+            "createdAt": "2024-01-12T03:42:13+09:00",
+            "updatedAt": "2026-07-15T11:40:09.980+09:00"
+        },
+        {
+            "id": "24518772-94a1-4bf8-a929-c1d487242bad",
+            "folderId": "32232892-cbf5-4c23-95fb-b16d418376c8",
+            "name": "買い出し",
+            "color": "#08d415",
             "sortOrder": 1,
-            "createdAt": "2026-07-14T19:56:23+09:00",
-            "updatedAt": "2026-07-14T21:41:39.709+09:00"
+            "createdAt": "2024-01-12T07:11:34+09:00",
+            "updatedAt": "2026-07-15T11:39:16.837+09:00"
         },
         {
-            "id": "af93a454-a891-4c63-8107-c96d8df1401a",
-            "folderId": "c187c8c1-2a17-46ac-b4b0-87625d33f4f2",
-            "name": "もち２",
-            "color": "#5b69e2",
-            "sortOrder": 0,
-            "createdAt": "2026-07-14T21:07:11.129+09:00",
-            "updatedAt": "2026-07-14T21:55:38.510+09:00"
-        },
-        {
-            "id": "ebd5b4dd-2daa-4e5c-8eaf-385bab72e629",
-            "folderId": "e27e2223-7e53-4686-bbef-0c0bd15dc394",
-            "name": "いも",
-            "color": "#bd47b3",
-            "sortOrder": 0,
-            "createdAt": "2026-07-14T21:09:20.831+09:00",
-            "updatedAt": "2026-07-14T21:25:50.046+09:00"
-        },
-        {
-            "id": "0ab4ffe1-4216-4365-a82f-c5d34dcdd1d6",
-            "folderId": "082c0ac3-2ed0-4990-9e17-75148feda0c3",
-            "name": "タスーク",
-            "color": "#40956c",
+            "id": "15fe62e3-ce90-4495-97bd-c4967964e0d6",
+            "folderId": "2a0256ad-d958-49b0-966f-b12faae89a26",
+            "name": "何か描く",
+            "color": "#ff384c",
             "sortOrder": 1,
-            "createdAt": "2026-07-14T21:19:38.794+09:00",
-            "updatedAt": "2026-07-14T21:25:40.606+09:00"
+            "createdAt": "2024-01-12T09:03:29+09:00",
+            "updatedAt": "2026-07-15T11:40:09.980+09:00"
         },
         {
-            "id": "be9a0d38-4b4f-4e98-9fbf-d263d3542bf6",
-            "folderId": "386f453c-5312-4e39-8536-5ec1a4f6faed",
-            "name": "あ",
-            "color": "#e18937",
+            "id": "4a511a08-3b35-4c75-abe4-73f5b9111da5",
+            "folderId": "be956adf-798b-4115-a5b2-ed5d96438cea",
+            "name": "N社",
+            "color": "#387aff",
+            "sortOrder": 0,
+            "createdAt": "2024-01-12T11:56:36+09:00",
+            "updatedAt": "2026-07-15T11:42:12.618+09:00"
+        },
+        {
+            "id": "5ae14f36-933b-45a8-9036-0e38704e20cd",
+            "folderId": "22d2687e-1990-487b-9147-ef3341eb267c",
+            "name": "楽器練習",
+            "color": "#543dff",
+            "sortOrder": 0,
+            "createdAt": "2024-01-12T13:58:50+09:00",
+            "updatedAt": "2026-07-15T11:40:33.611+09:00"
+        },
+        {
+            "id": "274fb93a-f975-46b1-bc17-5315fdba28dc",
+            "folderId": "32232892-cbf5-4c23-95fb-b16d418376c8",
+            "name": "歯みがき・身仕度",
+            "color": "#08d415",
             "sortOrder": 2,
-            "createdAt": "2026-07-14T21:24:51.495+09:00",
-            "updatedAt": "2026-07-14T21:35:08.825+09:00"
+            "createdAt": "2024-01-12T19:24:38+09:00",
+            "updatedAt": "2026-07-15T11:39:16.837+09:00"
         },
         {
-            "id": "34c03925-7627-4468-b441-e6d5e8e98f48",
-            "folderId": "386f453c-5312-4e39-8536-5ec1a4f6faed",
-            "name": "か",
-            "color": "#e77694",
+            "id": "4af4343f-467c-4a47-a08b-bb9c8d74f1b1",
+            "folderId": "0e4bee43-1450-4a06-978b-e60eeca1b1be",
+            "name": "睡眠",
+            "color": "#598b97",
+            "sortOrder": 0,
+            "createdAt": "2024-01-12T22:16:55+09:00",
+            "updatedAt": "2026-07-15T11:41:04.043+09:00"
+        },
+        {
+            "id": "9fe00b3f-0049-4ef0-9021-67974fd0381b",
+            "folderId": "2a0256ad-d958-49b0-966f-b12faae89a26",
+            "name": "シャルバグ模写",
+            "color": "#ff384c",
+            "sortOrder": 2,
+            "createdAt": "2024-01-13T13:23:08+09:00",
+            "updatedAt": "2026-07-15T11:40:09.980+09:00"
+        },
+        {
+            "id": "243f44d6-aad3-4cea-80d9-d235fca8afb5",
+            "folderId": "32232892-cbf5-4c23-95fb-b16d418376c8",
+            "name": "入浴",
+            "color": "#08d415",
             "sortOrder": 3,
-            "createdAt": "2026-07-14T21:24:57.422+09:00",
-            "updatedAt": "2026-07-14T21:35:13.081+09:00"
+            "createdAt": "2024-01-14T08:41:44+09:00",
+            "updatedAt": "2026-07-15T11:39:16.837+09:00"
         },
         {
-            "id": "2c368d54-583e-4071-af51-1dd39b71e711",
-            "folderId": "386f453c-5312-4e39-8536-5ec1a4f6faed",
-            "name": "な",
-            "color": "#e26d5b",
+            "id": "2ccd1901-1921-4658-8e48-df97b937fa0f",
+            "folderId": "3b197bfc-39df-4c87-990c-8b17bd160585",
+            "name": "映画・動画鑑賞",
+            "color": "#e83ba0",
+            "sortOrder": 0,
+            "createdAt": "2024-01-14T20:00:00+09:00",
+            "updatedAt": "2026-07-15T11:41:16.515+09:00"
+        },
+        {
+            "id": "3eeb3c7e-183f-436f-8989-18e6c6beed90",
+            "folderId": "32232892-cbf5-4c23-95fb-b16d418376c8",
+            "name": "家事",
+            "color": "#08d415",
+            "sortOrder": 4,
+            "createdAt": "2024-01-15T09:00:34+09:00",
+            "updatedAt": "2026-07-15T11:39:16.837+09:00"
+        },
+        {
+            "id": "7e75a533-800d-4804-8607-8c08056ecca4",
+            "folderId": "20e57d55-3783-4e6e-a601-4c120f29b542",
+            "name": "飲み",
+            "color": "#9b33f0",
+            "sortOrder": 1,
+            "createdAt": "2024-01-15T18:06:33+09:00",
+            "updatedAt": "2026-07-15T11:39:37.820+09:00"
+        },
+        {
+            "id": "bf034c4f-14fb-4785-8106-fc693bb7f88d",
+            "folderId": "be956adf-798b-4115-a5b2-ed5d96438cea",
+            "name": "F社",
+            "color": "#387aff",
+            "sortOrder": 1,
+            "createdAt": "2024-01-16T10:14:38+09:00",
+            "updatedAt": "2026-07-15T11:42:12.618+09:00"
+        },
+        {
+            "id": "82a1b583-6084-44e7-a17a-16e2a8bb55eb",
+            "folderId": "3b197bfc-39df-4c87-990c-8b17bd160585",
+            "name": "読書、読書会",
+            "color": "#e83ba0",
+            "sortOrder": 1,
+            "createdAt": "2024-01-18T11:22:59+09:00",
+            "updatedAt": "2026-07-15T11:41:16.515+09:00"
+        },
+        {
+            "id": "4f5dc65e-c3f8-4f8e-ab7b-d34494624ae9",
+            "folderId": "20e57d55-3783-4e6e-a601-4c120f29b542",
+            "name": "ゲーム",
+            "color": "#9b33f0",
+            "sortOrder": 2,
+            "createdAt": "2024-01-19T21:50:00+09:00",
+            "updatedAt": "2026-07-15T11:39:37.820+09:00"
+        },
+        {
+            "id": "991fae54-e5e0-42d6-adf6-52fddf5df5fb",
+            "folderId": "60897f71-db97-4f6f-8c03-47bf46f173d5",
+            "name": "外出",
+            "color": "#e3ee3f",
+            "sortOrder": 0,
+            "createdAt": "2024-01-28T09:20:53+09:00",
+            "updatedAt": "2026-07-15T11:41:36.146+09:00"
+        },
+        {
+            "id": "d0597398-b8e7-4ebd-b26f-7199d9c31cf2",
+            "folderId": "32232892-cbf5-4c23-95fb-b16d418376c8",
+            "name": "外食",
+            "color": "#08d415",
+            "sortOrder": 5,
+            "createdAt": "2024-02-01T11:26:27+09:00",
+            "updatedAt": "2026-07-15T11:39:16.837+09:00"
+        },
+        {
+            "id": "9f010e15-cce4-45b1-9cfe-911f2405e7b1",
+            "folderId": "60897f71-db97-4f6f-8c03-47bf46f173d5",
+            "name": "VRChat",
+            "color": "#e3ee3f",
+            "sortOrder": 1,
+            "createdAt": "2024-02-19T01:07:44+09:00",
+            "updatedAt": "2026-07-15T11:41:36.146+09:00"
+        },
+        {
+            "id": "52b1b3fb-b5c7-468e-a651-b4ea430f3937",
+            "folderId": "be956adf-798b-4115-a5b2-ed5d96438cea",
+            "name": "他事務など",
+            "color": "#387aff",
+            "sortOrder": 2,
+            "createdAt": "2024-03-09T22:43:08+09:00",
+            "updatedAt": "2026-07-15T11:42:12.618+09:00"
+        },
+        {
+            "id": "a24f1646-57c0-46a6-ace2-54dbba7e7942",
+            "folderId": "24f4daa9-16dc-4325-b6f3-e62536332832",
+            "name": "VRC用制作",
+            "color": "#ce3de1",
+            "sortOrder": 0,
+            "createdAt": "2024-03-19T03:12:22+09:00",
+            "updatedAt": "2026-07-15T11:41:55.538+09:00"
+        },
+        {
+            "id": "17adcd0e-ac99-4b83-abe0-71e35e4e516c",
+            "folderId": "2a0256ad-d958-49b0-966f-b12faae89a26",
+            "name": "F社絵仕事",
+            "color": "#ff384c",
+            "sortOrder": 3,
+            "createdAt": "2024-03-29T23:01:45+09:00",
+            "updatedAt": "2026-07-15T11:40:09.980+09:00"
+        },
+        {
+            "id": "a1cc54c9-7dcc-4608-a689-8bca8321cefe",
+            "folderId": "24f4daa9-16dc-4325-b6f3-e62536332832",
+            "name": "盆栽",
+            "color": "#ce3de1",
+            "sortOrder": 1,
+            "createdAt": "2024-04-20T11:26:40+09:00",
+            "updatedAt": "2026-07-15T11:41:55.538+09:00"
+        },
+        {
+            "id": "d6dbee7c-cafb-415a-bd19-0ee67de05658",
+            "folderId": "3b197bfc-39df-4c87-990c-8b17bd160585",
+            "name": "漫画鑑賞",
+            "color": "#e83ba0",
+            "sortOrder": 2,
+            "createdAt": "2024-04-20T14:14:10+09:00",
+            "updatedAt": "2026-07-15T11:41:16.515+09:00"
+        },
+        {
+            "id": "26983398-37ef-466e-8c05-22c88f270989",
+            "folderId": "22d2687e-1990-487b-9147-ef3341eb267c",
+            "name": "編集・動画",
+            "color": "#543dff",
+            "sortOrder": 1,
+            "createdAt": "2024-04-26T01:00:00+09:00",
+            "updatedAt": "2026-07-15T11:40:33.611+09:00"
+        },
+        {
+            "id": "8195fa95-4436-4f50-a20e-988f24d7fc0f",
+            "folderId": "9e2f0743-5404-494b-826f-d129f53006ee",
+            "name": "ジョギング",
+            "color": "#e88e3b",
+            "sortOrder": 0,
+            "createdAt": "2024-05-01T03:35:48+09:00",
+            "updatedAt": "2026-07-15T11:42:23.961+09:00"
+        },
+        {
+            "id": "6b671263-33d5-4c03-952a-054ed49695a0",
+            "folderId": "9e2f0743-5404-494b-826f-d129f53006ee",
+            "name": "筋トレ・ストレッチ・太極拳",
+            "color": "#e88e3b",
+            "sortOrder": 1,
+            "createdAt": "2024-05-07T19:27:00+09:00",
+            "updatedAt": "2026-07-15T11:42:23.961+09:00"
+        },
+        {
+            "id": "e931e6d1-8c9a-4f78-a742-c8c28c8b935c",
+            "folderId": "2a0256ad-d958-49b0-966f-b12faae89a26",
+            "name": "プロット",
+            "color": "#ff384c",
+            "sortOrder": 4,
+            "createdAt": "2024-06-07T22:27:49+09:00",
+            "updatedAt": "2026-07-15T11:40:09.980+09:00"
+        },
+        {
+            "id": "78c0bc2e-21e0-49f1-8624-71dd33d32d27",
+            "folderId": "9e2f0743-5404-494b-826f-d129f53006ee",
+            "name": "散歩",
+            "color": "#e88e3b",
+            "sortOrder": 2,
+            "createdAt": "2024-06-08T00:12:42+09:00",
+            "updatedAt": "2026-07-15T11:42:23.961+09:00"
+        },
+        {
+            "id": "4b298b9f-3633-421c-ab11-f7a4fb7adee6",
+            "folderId": "22d2687e-1990-487b-9147-ef3341eb267c",
+            "name": "DTM・作曲練習・分析",
+            "color": "#543dff",
+            "sortOrder": 2,
+            "createdAt": "2024-06-14T11:28:00+09:00",
+            "updatedAt": "2026-07-15T11:40:33.611+09:00"
+        },
+        {
+            "id": "1ba7e5e3-6eb1-4299-8177-10ea28ac7b12",
+            "folderId": "3b197bfc-39df-4c87-990c-8b17bd160585",
+            "name": "語学",
+            "color": "#e83ba0",
+            "sortOrder": 3,
+            "createdAt": "2024-08-27T15:28:54+09:00",
+            "updatedAt": "2026-07-15T11:41:16.515+09:00"
+        },
+        {
+            "id": "0dce7ffa-2e85-41e3-890c-d2a372de69e3",
+            "folderId": "24f4daa9-16dc-4325-b6f3-e62536332832",
+            "name": "ゲーム制作",
+            "color": "#ce3de1",
+            "sortOrder": 2,
+            "createdAt": "2024-09-06T05:00:00+09:00",
+            "updatedAt": "2026-07-15T11:41:55.538+09:00"
+        },
+        {
+            "id": "3cd8046d-f8e8-49ee-9313-3f17c157acdb",
+            "folderId": "24f4daa9-16dc-4325-b6f3-e62536332832",
+            "name": "素材制作・資料準備",
+            "color": "#ce3de1",
+            "sortOrder": 3,
+            "createdAt": "2024-09-09T21:30:00+09:00",
+            "updatedAt": "2026-07-15T11:41:55.538+09:00"
+        },
+        {
+            "id": "88c31823-0210-42d8-9cf4-1b30e304a191",
+            "folderId": "24f4daa9-16dc-4325-b6f3-e62536332832",
+            "name": "打ち合わせ",
+            "color": "#ce3de1",
+            "sortOrder": 4,
+            "createdAt": "2024-09-16T21:00:00+09:00",
+            "updatedAt": "2026-07-15T11:41:55.538+09:00"
+        },
+        {
+            "id": "7b62a0bf-3cae-42bc-a28d-b0c063fdbe3e",
+            "folderId": "2a0256ad-d958-49b0-966f-b12faae89a26",
+            "name": "実作",
+            "color": "#ff384c",
+            "sortOrder": 5,
+            "createdAt": "2024-11-17T19:43:40+09:00",
+            "updatedAt": "2026-07-15T11:40:09.980+09:00"
+        },
+        {
+            "id": "87314ee1-a65b-48a2-9e88-fb8b29848a29",
+            "folderId": "24f4daa9-16dc-4325-b6f3-e62536332832",
+            "name": "サーバー・ホムペ運営",
+            "color": "#ce3de1",
+            "sortOrder": 5,
+            "createdAt": "2025-04-08T16:05:14+09:00",
+            "updatedAt": "2026-07-15T11:41:55.538+09:00"
+        },
+        {
+            "id": "bffd2683-a853-46ed-bd1c-f9d4d753ffbd",
+            "folderId": "20e57d55-3783-4e6e-a601-4c120f29b542",
+            "name": "将棋",
+            "color": "#9b33f0",
+            "sortOrder": 3,
+            "createdAt": "2025-05-13T18:12:37+09:00",
+            "updatedAt": "2026-07-15T11:39:37.820+09:00"
+        },
+        {
+            "id": "20f05afe-069c-41c7-9af0-034fa25653ff",
+            "folderId": "0e4bee43-1450-4a06-978b-e60eeca1b1be",
+            "name": "不眠",
+            "color": "#598b97",
+            "sortOrder": 0,
+            "createdAt": "2026-01-16T00:22:06+09:00",
+            "updatedAt": "2026-07-15T11:42:54.913+09:00"
+        },
+        {
+            "id": "40efe32a-0776-4972-b713-8af11e2cc376",
+            "folderId": "24f4daa9-16dc-4325-b6f3-e62536332832",
+            "name": "その他制作",
+            "color": "#ce3de1",
             "sortOrder": 6,
-            "createdAt": "2026-07-14T21:25:14.887+09:00",
-            "updatedAt": "2026-07-14T21:35:13.081+09:00"
+            "createdAt": "2026-03-21T00:36:00+09:00",
+            "updatedAt": "2026-07-15T11:41:55.538+09:00"
+        },
+        {
+            "id": "b13a0455-fa86-457d-bd50-2791acfc5f66",
+            "folderId": "22d2687e-1990-487b-9147-ef3341eb267c",
+            "name": "音感練習",
+            "color": "#543dff",
+            "sortOrder": 3,
+            "createdAt": "2026-03-25T09:38:22+09:00",
+            "updatedAt": "2026-07-15T11:40:33.611+09:00"
         }
     ],
-    "updatedAt": "2026-07-14T22:11:50+09:00"
+    "updatedAt": "2026-07-15T11:42:58+09:00"
 }

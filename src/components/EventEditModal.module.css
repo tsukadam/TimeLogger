@@ -56,14 +56,24 @@
   align-items: stretch;
 }
 
+/* 日付・時刻ボックスがはみ出して重ならないように */
+.dateTimeRow > * {
+  min-width: 0;
+}
+
 .field input {
   width: 100%;
+  min-width: 0;
+  height: 44px;
+  box-sizing: border-box;
   border-radius: 8px;
   border: 1px solid var(--line);
   background: var(--panel-2);
   color: var(--fg);
-  padding: 10px 12px;
+  padding: 0 12px;
   font: inherit;
+  /* iOS のフォーカスズーム防止＋TimeField と高さを揃える */
+  font-size: 16px;
   font-variant-numeric: tabular-nums;
 }
 

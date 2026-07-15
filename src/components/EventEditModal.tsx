@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { FolderSelect } from './FolderSelect'
 import { TaskSelect } from './TaskSelect'
 import { TimeField } from './TimeField'
@@ -108,7 +109,8 @@ export function EventEditModal({
     }
   }
 
-  return (
+  // スクロールコンテナ内の fixed は実機で上端まで覆えないことがあるため body に出す
+  return createPortal(
     <div className={styles.modalRoot}>
       <button
         type="button"
@@ -222,7 +224,8 @@ export function EventEditModal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

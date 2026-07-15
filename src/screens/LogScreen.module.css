@@ -77,11 +77,28 @@
   font-weight: 600;
 }
 
+.rangeRow {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.stepBtn {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0 14px;
+  background: var(--panel);
+  color: var(--fg);
+  font-size: 0.95rem;
+}
+
 .rangeBtn {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   box-sizing: border-box;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -306,6 +323,89 @@
   color: var(--muted);
   font-size: 0.68rem;
   font-variant-numeric: tabular-nums;
+}
+
+/* Year 合計モードの棒（タップでタスク名チップを表示） */
+.totalsWrap {
+  position: relative;
+}
+
+.totalSeg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  min-height: 2px;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.donutSlice {
+  cursor: pointer;
+}
+
+/* タップで出すタスク名チップ（グラフ上に重ねる。タップで閉じる） */
+.chartTip {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 16px);
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--fg);
+  font-size: 0.82rem;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.chartTip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chartTipTime {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Year の時系列/合計 切り替え。外見はタスク/フォルダ選択と同じ、大きさは Detail と同じ */
+.modeBtns {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.modeBtn,
+.modeOn {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 16px;
+  background: var(--panel-2);
+  color: var(--fg);
+  font-size: 0.88rem;
+}
+
+/* 太字時の幅を不可視ゴーストで確保（選択切替でボタン幅が動かないように） */
+.modeBtn::after,
+.modeOn::after {
+  content: attr(data-text);
+  display: block;
+  height: 0;
+  visibility: hidden;
+  overflow: hidden;
+  font-weight: 650;
+}
+
+.modeOn {
+  border-color: var(--accent);
+  font-weight: 650;
 }
 
 .pieCenter {
@@ -548,22 +648,6 @@
 .monthOn {
   border-color: var(--accent);
   font-weight: 650;
-}
-
-.yearPick {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  padding: 12px 0;
-}
-
-.yearValue {
-  font-size: 1.5rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  min-width: 4em;
-  text-align: center;
 }
 
 .sheetActions {

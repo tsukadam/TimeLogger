@@ -54,6 +54,8 @@ a {
 input,
 select {
   font: inherit;
+  /* 16px 未満だと iOS がフォーカス時に画面全体をズームするため 16px 固定 */
+  font-size: 16px;
   color: var(--fg);
   background: var(--panel-2);
   border: 1px solid var(--line);

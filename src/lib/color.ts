@@ -56,10 +56,10 @@ function normalizeHex(hex: string): string {
 }
 
 /**
- * 明暗: 暗2 / 暗1 / 元 / 明
+ * 明暗: 暗1 / 元 / 明（暗2 は廃止）
  * 明は弱め（旧 +2 → +1）
  */
-const L_LEVELS = [-4, -2, 0, 1] as const
+const L_LEVELS = [-2, 0, 1] as const
 const L_DELTA = 0.062
 /** 彩度: 下げ / 基準 / 上げ */
 const S_DELTAS = [-0.14, 0, 0.14] as const
@@ -68,9 +68,9 @@ const HUE_SHIFT = 8
 const HUE_ROW_OFFSETS = [-2, -1, 0, 1, 2] as const
 
 /**
- * 1行12色。
- * 彩度グループごとに: 暗2 → 暗1 → 元 → 明
- * 全体: [S↓の4] [S基準の4] [S↑の4]
+ * 1行9色。
+ * 彩度グループごとに: 暗1 → 元 → 明
+ * 全体: [S↓の3] [S基準の3] [S↑の3]
  */
 function buildRow(h: number, baseS: number, baseL: number): string[] {
   const out: string[] = []
@@ -84,11 +84,11 @@ function buildRow(h: number, baseS: number, baseL: number): string[] {
   return out
 }
 
-/** 中央行・基準彩度グループの「元」マス index = 1*4 + 2 */
-export const TASK_BASE_CELL = { row: 2, col: 6 } as const
+/** 中央行・基準彩度グループの「元」マス index = 1*3 + 1 */
+export const TASK_BASE_CELL = { row: 2, col: 4 } as const
 
 /**
- * タスク色グリッド 5行×12列
+ * タスク色グリッド 5行×9列
  * - 中央行・元マス = フォルダ色
  * - 「＋」は UI 側で右下にはみ出し
  */
