@@ -3,6 +3,7 @@ node_modules/
 
 # Vite ビルド成果物
 dist/
+build/
 
 # ローカル環境
 .env
