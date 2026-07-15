@@ -683,9 +683,9 @@ export function LogScreen() {
         Math.max(pad, r.left),
         window.innerWidth - width - pad,
       )
-      // 日付ボタン直下＝画面上寄り。はみ出す分は下端に寄せる
+      // 日付ボタンを覆い隠す（古い期間表記が見えないよう上端で揃える）
       const maxTop = window.innerHeight - 120
-      const top = Math.min(r.bottom + 6, maxTop)
+      const top = Math.min(r.top, maxTop)
       setSheetPos({ top, left, width })
     } else {
       setSheetPos({ top: 80, left: 16, width: Math.min(400, window.innerWidth - 32) })
@@ -877,6 +877,7 @@ export function LogScreen() {
           <button
             key={k}
             type="button"
+            data-text={label}
             className={prefs.kind === k ? styles.kindActive : undefined}
             onClick={() => setKind(k)}
           >

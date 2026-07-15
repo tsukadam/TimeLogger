@@ -69,6 +69,7 @@ export default function App() {
               <div className={styles.tabs}>
                 <button
                   type="button"
+                  data-text="Tasks"
                   className={mainTab === 'tasks' ? styles.active : undefined}
                   onClick={() => setMainTab('tasks')}
                 >
@@ -76,6 +77,7 @@ export default function App() {
                 </button>
                 <button
                   type="button"
+                  data-text="Activity"
                   className={mainTab === 'activity' ? styles.active : undefined}
                   onClick={() => setMainTab('activity')}
                 >

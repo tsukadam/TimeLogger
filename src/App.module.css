@@ -61,6 +61,17 @@
   color: var(--muted);
   padding: 8px 10px;
   border-bottom: 2px solid transparent;
+  text-align: center;
+}
+
+/* 太字時の幅を不可視ゴーストで常に確保し、タブ幅を固定する */
+.tabs button::after {
+  content: attr(data-text);
+  display: block;
+  height: 0;
+  visibility: hidden;
+  overflow: hidden;
+  font-weight: 600;
 }
 
 .tabs button.active {
@@ -73,6 +84,8 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
+  /* スクロールバーの有無で内容幅が動かないよう常にガター確保 */
+  scrollbar-gutter: stable;
   padding-bottom: calc(16px + var(--safe-bottom));
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
