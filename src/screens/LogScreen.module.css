@@ -614,12 +614,6 @@
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
 }
 
-.sheetTitle {
-  margin: 0;
-  font-size: 1.05rem;
-  font-weight: 650;
-}
-
 .calHead {
   display: flex;
   align-items: center;
@@ -752,7 +746,6 @@
   margin-top: 8px;
 }
 
-.ghost,
 .primary {
   border-radius: 8px;
   padding: 8px 14px;

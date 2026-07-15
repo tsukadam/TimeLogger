@@ -1,10 +1,6 @@
-﻿import path from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { defineConfig } from 'vite'
+﻿import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig(({ command }) => ({
   plugins: [
@@ -57,11 +53,6 @@ export default defineConfig(({ command }) => ({
       },
     }),
   ],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, 'src'),
-    },
-  },
   base: command === 'serve' ? '/' : process.env.VITE_BASE_PATH || '/timelogger/',
   server: {
     proxy: {

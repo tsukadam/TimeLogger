@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { daysInMonth, todayKey } from '../lib/time'
 import { useScrollLock } from '../lib/useScrollLock'
@@ -25,7 +25,6 @@ export function DateField({
   'aria-label'?: string
 }) {
   const [open, setOpen] = useState(false)
-  const rootRef = useRef<HTMLDivElement | null>(null)
   useScrollLock(open)
   const [view, setView] = useState<{ y: number; m: number }>(() => {
     const t = todayKey()
@@ -73,7 +72,7 @@ export function DateField({
   while (cells.length % 7 !== 0) cells.push(null)
 
   return (
-    <div className={styles.wrap} ref={rootRef}>
+    <div className={styles.wrap}>
       <button
         type="button"
         className={styles.trigger}

@@ -1584,7 +1584,7 @@ export function LogScreen() {
             )}
 
             {draft.kind === 'year' && (
-              <div className={styles.monthPick}>
+              <div>
                 <div className={styles.calHead}>
                   <div className={styles.calNav}>
                     <button

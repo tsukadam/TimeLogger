@@ -1,4 +1,10 @@
-import type { EventsFile, SettingsFile, TasksFile } from '../types'
+import type {
+  ApiError,
+  EventsFile,
+  SettingsFile,
+  TasksFile,
+  WriteResult,
+} from '../types'
 
 export type Resource = 'tasks' | 'settings' | 'events'
 
@@ -85,11 +91,11 @@ export async function putResource<K extends Resource>(
         throw new Error(`PUT ${resource} failed: ${res.status} ${text}`)
       }
       // サーバーが updatedAt を付け直すので、返り値の updatedAt で揃える
-      const result = (await res.json()) as { ok: boolean; updatedAt?: string }
+      const result = (await res.json()) as WriteResult | ApiError
       if (!result.ok) {
         throw new Error(`PUT ${resource} rejected`)
       }
-      return { ...body, updatedAt: result.updatedAt ?? body.updatedAt }
+      return { ...body, updatedAt: result.updatedAt }
     }),
   )
 }

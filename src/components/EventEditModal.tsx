@@ -12,7 +12,6 @@ import {
 } from '../lib/time'
 import { useScrollLock } from '../lib/useScrollLock'
 import { useStore } from '../state/Store'
-import type { Event } from '../types'
 import styles from './EventEditModal.module.css'
 
 /** Activity / Log 共通の記録編集モーダル */
@@ -249,5 +248,3 @@ export function EventEditModal({
     document.body,
   )
 }
-
-export type { Event }

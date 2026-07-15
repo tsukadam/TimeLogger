@@ -83,7 +83,7 @@ export function formatDateDivider(iso: string): string {
  * 表示用時刻（秒未満は切り捨て）
  * 時はゼロなし、分秒はゼロ埋め
  */
-export function formatTimeHms(iso: string): string {
+function formatTimeHms(iso: string): string {
   const p = partsInTokyo(floorToSecond(iso))
   return `${p.hour}:${String(p.minute).padStart(2, '0')}:${String(p.second).padStart(2, '0')}`
 }
@@ -108,7 +108,7 @@ export function formatDurationHms(totalSec: number): string {
 }
 
 /** 実 ms 差を切り捨てて秒に（表示専用。判定には elapsedMs を使う） */
-export function durationSeconds(
+function durationSeconds(
   startedAt: string,
   endedAt: string | null,
   nowMs = Date.now(),

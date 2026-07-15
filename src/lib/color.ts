@@ -137,21 +137,6 @@ export function remapPaletteTaskColor(
   return taskColorGrid(newFolderColor)[pos.row]![pos.col]!
 }
 
-export const DEFAULT_PALETTE = [
-  '#e08a3c',
-  '#5bb98c',
-  '#5b8de2',
-  '#c45c9a',
-  '#c9b458',
-  '#e25b5b',
-  '#8b8f98',
-  '#6bc4c4',
-  '#d2783a',
-  '#7a8cff',
-  '#d4a0c8',
-  '#a8c45c',
-]
-
 /** フォルダ用デフォルト色（適当な固定パレット） */
 export const FOLDER_PALETTE = [
   '#e08a3c',

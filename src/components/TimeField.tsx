@@ -23,7 +23,6 @@ export function TimeField({
   const [draft, setDraft] = useState(value)
   const draftRef = useRef(value)
   const rootRef = useRef<HTMLDivElement | null>(null)
-  const panelRef = useRef<HTMLDivElement | null>(null)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
 
   draftRef.current = draft
@@ -101,7 +100,6 @@ export function TimeField({
               onClick={commitClose}
             />
             <div
-              ref={panelRef}
               className={styles.panel}
               style={{ top: pos.top, left: pos.left }}
               role="dialog"

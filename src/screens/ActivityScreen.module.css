@@ -313,8 +313,7 @@
   min-width: 0;
 }
 
-.field input,
-.field select {
+.field input {
   width: 100%;
   min-width: 0;
   height: 44px;
@@ -328,19 +327,6 @@
   /* iOS のフォーカスズーム防止＋TimeField と高さを揃える */
   font-size: 16px;
   font-variant-numeric: tabular-nums;
-}
-
-.liveRow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--fg);
-  font-size: 0.95rem;
-}
-
-.liveRow input {
-  width: auto;
-  accent-color: var(--accent);
 }
 
 .formError {
@@ -364,7 +350,6 @@
   margin-left: auto;
 }
 
-.ghost,
 .primary,
 .danger {
   border-radius: 8px;
