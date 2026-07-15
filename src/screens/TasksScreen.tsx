@@ -115,15 +115,6 @@ export function TasksScreen() {
   }, [current])
 
   useEffect(() => {
-    if (!sheetOpen) return
-    const prev = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = prev
-    }
-  }, [sheetOpen])
-
-  useEffect(() => {
     if (!folderId && folders[0]) setFolderId(folders[0].id)
   }, [folderId, folders])
 

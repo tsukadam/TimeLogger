@@ -387,6 +387,44 @@
   inset: 0;
 }
 
+/* 完成形のグラフを下地色のマスクで覆い、縮めながら見せていく
+   （丸め誤差で中身が縁からはみ出て見えないよう、ぴったりでなく少し大きめに） */
+.revealY {
+  position: absolute;
+  inset: -2px;
+  background: var(--panel-2);
+  transform-origin: top;
+  animation: maskShrinkY 0.5s ease-out both;
+  pointer-events: none;
+}
+
+.revealX {
+  position: absolute;
+  inset: -2px;
+  background: var(--panel-2);
+  transform-origin: right;
+  animation: maskShrinkX 0.5s ease-out both;
+  pointer-events: none;
+}
+
+@keyframes maskShrinkY {
+  from {
+    transform: scaleY(1);
+  }
+  to {
+    transform: scaleY(0);
+  }
+}
+
+@keyframes maskShrinkX {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
 /* タップで出すタスク名チップ（グラフ上に重ねる。タップで閉じる） */
 .chartTip {
   position: absolute;

@@ -56,6 +56,9 @@ function WheelColumn({
   const movedRef = useRef(false)
   const rafRef = useRef<number | null>(null)
   const samplesRef = useRef<{ t: number; p: number }[]>([])
+  // マウスホイール用: 累積 deltaY と、連続回転中の行き先
+  const wheelAccRef = useRef(0)
+  const wheelTargetRef = useRef<number | null>(null)
 
   const stopAnim = () => {
     if (rafRef.current !== null) {
@@ -118,9 +121,29 @@ function WheelColumn({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, mod])
 
+  const onWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (disabled || draggingRef.current) return
+    // ノッチ式ホイール1目盛り（deltaY≒100）で1ステップ。トラックパッドは累積で追従
+    const scale = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 100 : 1
+    wheelAccRef.current += e.deltaY * scale
+    const steps = Math.trunc(wheelAccRef.current / 100)
+    if (steps === 0) return
+    wheelAccRef.current -= steps * 100
+    // アニメ中に続けて回したら、現在位置ではなく行き先を基準に積み増す
+    const base =
+      rafRef.current !== null && wheelTargetRef.current !== null
+        ? wheelTargetRef.current
+        : Math.round(posRef.current)
+    const target = base + steps
+    wheelTargetRef.current = target
+    animateTo(target, 160, true)
+  }
+
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (disabled) return
     stopAnim()
+    wheelTargetRef.current = null
+    wheelAccRef.current = 0
     draggingRef.current = true
     movedRef.current = false
     samplesRef.current = [{ t: performance.now(), p: posRef.current }]
@@ -188,6 +211,7 @@ function WheelColumn({
       role="listbox"
       aria-label={label}
       onPointerDown={onPointerDown}
+      onWheel={onWheel}
     >
       {items.map((it) => (
         <button

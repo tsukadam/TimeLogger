@@ -482,7 +482,16 @@ function ChartTip({
   )
 }
 
-function Donut({ slices, totalSec }: { slices: Slice[]; totalSec: number }) {
+function Donut({
+  slices,
+  totalSec,
+  draw = true,
+}: {
+  slices: Slice[]
+  totalSec: number
+  /** false の間は下地の輪だけ描く（タブ切替アニメ中の負荷回避） */
+  draw?: boolean
+}) {
   const [tip, setTip] = useState<Slice | null>(null)
   const wrapRef = useRef<HTMLDivElement | null>(null)
   // 期間が変われば key で再マウントされるので、slices の同一性変化では消さない
@@ -574,7 +583,7 @@ function Donut({ slices, totalSec }: { slices: Slice[]; totalSec: number }) {
           stroke="var(--panel-2)"
           strokeWidth={STROKE}
         />
-        {slices.map((s) => {
+        {draw && slices.map((s) => {
           const frac = totalSec > 0 ? s.sec / totalSec : 0
           const startFrac = drawAcc / Math.max(totalSec, 1)
           const rot = startFrac * 360
@@ -604,7 +613,7 @@ function Donut({ slices, totalSec }: { slices: Slice[]; totalSec: number }) {
             />
           )
         })}
-        {callouts.map((c) => (
+        {draw && callouts.map((c) => (
           <g key={c.id} className={styles.callout}>
             <polyline
               points={c.points}
@@ -633,12 +642,15 @@ function IndividualChart({
   chartMode,
   onSeg,
   tapName = false,
+  draw = true,
 }: {
   columns: Column[]
   chartMode: 'day' | 'stack'
   onSeg: (id: string) => void
   /** true なら、セグメントのタップは編集でなく名前チップ表示（Year 用） */
   tapName?: boolean
+  /** false の間は下地トラックだけ描く（タブ切替アニメ中の負荷回避） */
+  draw?: boolean
 }) {
   const [tip, setTip] = useState<{ key: string; slice: Slice } | null>(null)
   const wrapRef = useRef<HTMLDivElement | null>(null)
@@ -673,10 +685,10 @@ function IndividualChart({
             .filter((s) => s.end > s.start)
           const span = Math.max(1, h.end - h.start)
           return (
-            <div key={h.key} className={styles.dayHalf}>
-              <div className={styles.dayTrackBar}>
-                <div className={styles.fillStill}>
-                  {segs.map((s) => (
+              <div key={h.key} className={styles.dayHalf}>
+                <div className={styles.dayTrackBar}>
+                  <div className={styles.fillStill}>
+                    {draw && segs.map((s) => (
                     <button
                       key={`${s.eventId}-${s.start}`}
                       type="button"
@@ -691,6 +703,8 @@ function IndividualChart({
                     />
                   ))}
                 </div>
+                {/* 完成形をマスクで隠し、左から右へ縮めて見せる */}
+                {draw && <div className={styles.revealX} aria-hidden />}
               </div>
               <div className={styles.dayTicks}>
                 {h.ticks.map((t) => (
@@ -721,7 +735,7 @@ function IndividualChart({
               <div key={col.key} className={styles.stackCol}>
                 <div className={styles.stackBar}>
                   <div className={styles.fillStill}>
-                  {col.segs.map((s) => {
+                  {draw && col.segs.map((s) => {
                     const segKey = `${s.eventId}-${s.start}`
                     return (
                       <button
@@ -752,6 +766,8 @@ function IndividualChart({
                     )
                   })}
                   </div>
+                  {/* 完成形をマスクで隠し、下から上へ縮めて見せる */}
+                  {draw && <div className={styles.revealY} aria-hidden />}
                 </div>
                 <span className={styles.stackLabel}>{col.label}</span>
               </div>
@@ -766,7 +782,14 @@ function IndividualChart({
   )
 }
 
-function TotalsChart({ columns }: { columns: TotalCol[] }) {
+function TotalsChart({
+  columns,
+  draw = true,
+}: {
+  columns: TotalCol[]
+  /** false の間は下地トラックだけ描く（タブ切替アニメ中の負荷回避） */
+  draw?: boolean
+}) {
   const n = Math.max(columns.length, 1)
   // タップで表示するタスク名（月単位の合算値）
   const [tip, setTip] = useState<{ key: string; slice: Slice } | null>(null)
@@ -788,7 +811,7 @@ function TotalsChart({ columns }: { columns: TotalCol[] }) {
               <div key={col.key} className={styles.stackCol}>
                 <div className={styles.stackBar}>
                   <div className={styles.fillStill}>
-                  {col.parts.map((p) => {
+                  {draw && col.parts.map((p) => {
                     const bottom = (acc / col.spanSec) * 100
                     acc += p.sec
                     const segKey = `${col.key}:${p.id}`
@@ -813,6 +836,8 @@ function TotalsChart({ columns }: { columns: TotalCol[] }) {
                     )
                   })}
                   </div>
+                  {/* 完成形をマスクで隠し、下から上へ縮めて見せる */}
+                  {draw && <div className={styles.revealY} aria-hidden />}
                 </div>
                 <span className={styles.stackLabel}>{col.label}</span>
               </div>
@@ -854,7 +879,23 @@ export function LogScreen() {
   const [now, setNow] = useState(() => Date.now())
   const [editId, setEditId] = useState<string | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
-  const [yearMode, setYearMode] = useState<'series' | 'total'>('series')
+  // Summary グラフの表示モード（Tasks = タスクの時系列 / Genres = ジャンル合算）
+  const [sumMode, setSumMode] = useState<'tasks' | 'genres'>('tasks')
+  // タブ移動と同時に重いグラフ描画を始めるとアニメがコマ落ちするため、
+  // 枠・下地・一覧は先に出し、グラフの中身は段階的に描く:
+  // 1) 棒（スライド後）→ 2) 円1（棒のマスクが終わってから）→ 3) 円2（さらに後）
+  const [drawStage, setDrawStage] = useState(0)
+  useEffect(() => {
+    setDrawStage(0)
+    const t1 = window.setTimeout(() => setDrawStage(1), 300)
+    const t2 = window.setTimeout(() => setDrawStage(2), 850)
+    const t3 = window.setTimeout(() => setDrawStage(3), 1200)
+    return () => {
+      window.clearTimeout(t1)
+      window.clearTimeout(t2)
+      window.clearTimeout(t3)
+    }
+  }, [prefs.kind])
 
   // 期間タブのオレンジバーをアクティブ位置へスライドさせる
   const kindTabsRef = useRef<HTMLDivElement | null>(null)
@@ -1118,9 +1159,12 @@ export function LogScreen() {
       }
       // custom はサマリーなし（期間が可変で件数も多くなり得るため）
 
-      // Year の「合計」表示: 月ごとのタスク合算棒。積み順は年内の初出現順（下から）
+      // Genres 表示: 列（日/月）ごとのジャンル合算棒。積み順は期間内の初出現順（下から）
       let totalColumns: TotalCol[] = []
-      if (k === 'year') {
+      if (
+        sumMode === 'genres' &&
+        (k === 'week' || k === 'month' || k === 'year')
+      ) {
         totalColumns = columns.map((col) => {
           const m = new Map<string, Slice>()
           for (const ev of events) {
@@ -1132,19 +1176,19 @@ export function LogScreen() {
             const sec = Math.floor((b - a) / 1000)
             if (sec <= 0) continue
             const d = resolveDisplay(ev, tasks, folders)
-            const cur = m.get(d.taskId)
+            const cur = m.get(d.folderId)
             if (cur) cur.sec += sec
             else
-              m.set(d.taskId, {
-                id: d.taskId,
-                name: d.taskName,
-                color: d.taskColor,
+              m.set(d.folderId, {
+                id: d.folderId,
+                name: d.folderName,
+                color: d.folderColor,
                 sec,
               })
           }
           const parts = [...m.values()].sort(
             (a, b) =>
-              (firstByTask.get(a.id) ?? 0) - (firstByTask.get(b.id) ?? 0),
+              (firstByFolder.get(a.id) ?? 0) - (firstByFolder.get(b.id) ?? 0),
           )
           return {
             key: col.key,
@@ -1166,7 +1210,11 @@ export function LogScreen() {
         chartMode,
         dayEvents,
       }
-    }, [applied, events, tasks, folders, now])
+    }, [applied, events, tasks, folders, now, sumMode])
+
+  // 時系列/Tasks/Genres の切り替えを持つ期間種別
+  const hasSumModes =
+    prefs.kind === 'week' || prefs.kind === 'month' || prefs.kind === 'year'
 
   if (loading || !prefsReady) {
     return <p className={styles.status}>Loading...</p>
@@ -1263,11 +1311,12 @@ export function LogScreen() {
           <div className={styles.panel}>
             {totalSec === 0 ? (
               <p className={styles.status}>No Data</p>
-            ) : prefs.kind === 'year' && yearMode === 'total' ? (
-              // key: 期間が変わったら伸長アニメを再生し直す
+            ) : hasSumModes && sumMode === 'genres' ? (
+              // key: 期間・モードが変わったら描き直す
               <TotalsChart
-                key={`${prefs.kind}-${applied.start}`}
+                key={`${prefs.kind}-${applied.start}-${sumMode}`}
                 columns={totalColumns}
+                draw={drawStage >= 1}
               />
             ) : (
               <IndividualChart
@@ -1276,26 +1325,27 @@ export function LogScreen() {
                 chartMode={chartMode}
                 onSeg={setEditId}
                 tapName={prefs.kind === 'year'}
+                draw={drawStage >= 1}
               />
             )}
           </div>
-          {prefs.kind === 'year' && totalSec > 0 && (
+          {hasSumModes && totalSec > 0 && (
             <div className={styles.modeBtns}>
               <button
                 type="button"
-                data-text="時系列"
-                className={yearMode === 'series' ? styles.modeOn : styles.modeBtn}
-                onClick={() => setYearMode('series')}
+                data-text="Tasks"
+                className={sumMode === 'tasks' ? styles.modeOn : styles.modeBtn}
+                onClick={() => setSumMode('tasks')}
               >
-                時系列
+                Tasks
               </button>
               <button
                 type="button"
-                data-text="合計"
-                className={yearMode === 'total' ? styles.modeOn : styles.modeBtn}
-                onClick={() => setYearMode('total')}
+                data-text="Genres"
+                className={sumMode === 'genres' ? styles.modeOn : styles.modeBtn}
+                onClick={() => setSumMode('genres')}
               >
-                合計
+                Genres
               </button>
             </div>
           )}
@@ -1364,6 +1414,7 @@ export function LogScreen() {
               key={`${prefs.kind}-${applied.start}`}
               slices={pieTaskSlices}
               totalSec={totalSec}
+              draw={drawStage >= 2}
             />
           </div>
           <table className={styles.table}>
@@ -1402,6 +1453,7 @@ export function LogScreen() {
               key={`${prefs.kind}-${applied.start}`}
               slices={pieFolderSlices}
               totalSec={totalSec}
+              draw={drawStage >= 3}
             />
           </div>
           <table className={styles.table}>
