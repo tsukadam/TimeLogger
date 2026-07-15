@@ -35,6 +35,7 @@
 }
 
 .kindTabs {
+  position: relative;
   display: flex;
   flex-wrap: nowrap;
   gap: 0;
@@ -73,8 +74,16 @@
 
 .kindTabs button.kindActive {
   color: var(--fg);
-  border-bottom-color: var(--accent);
   font-weight: 600;
+}
+
+/* アクティブタブへぬるっと移動するオレンジバー */
+.kindInd {
+  position: absolute;
+  bottom: 0;
+  height: 2px;
+  background: var(--accent);
+  transition: left 0.25s ease, width 0.25s ease;
 }
 
 .rangeRow {
@@ -342,6 +351,40 @@
 
 .donutSlice {
   cursor: pointer;
+  /* 真上0度から時計回りに伸びるスイープ（delay/duration はインラインで指定） */
+  animation-name: sweep;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+
+@keyframes sweep {
+  from {
+    stroke-dasharray: 0 var(--c);
+  }
+  to {
+    stroke-dasharray: var(--target) var(--c);
+  }
+}
+
+/* ラベルと伸ばし棒はスイープ完了後にフェードイン */
+.callout {
+  opacity: 0;
+  animation: calloutIn 0.2s ease-out 0.35s forwards;
+}
+
+@keyframes calloutIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 棒グラフのセグメント配置用コンテナ（アニメなし） */
+.fillStill {
+  position: absolute;
+  inset: 0;
 }
 
 /* タップで出すタスク名チップ（グラフ上に重ねる。タップで閉じる） */
@@ -500,6 +543,17 @@
   padding: 0;
   background: rgba(0, 0, 0, 0.45);
   cursor: default;
+  touch-action: none;
+  animation: backdropIn 0.2s ease-out both;
+}
+
+@keyframes backdropIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .sheet {
@@ -516,6 +570,8 @@
   max-height: min(70dvh, 560px);
   overflow: auto;
   -webkit-overflow-scrolling: touch;
+  /* シート端でのスクロールを背後に連鎖させない */
+  overscroll-behavior: contain;
   box-sizing: border-box;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
 }
@@ -576,16 +632,16 @@
 }
 
 .calEmpty {
-  height: 28px;
+  height: 38px;
 }
 
 .calDay {
-  height: 28px;
+  height: 38px;
   border: none;
   border-radius: 6px;
   background: transparent;
   color: var(--fg);
-  font-size: 0.78rem;
+  font-size: 0.85rem;
   font-variant-numeric: tabular-nums;
   padding: 0;
 }

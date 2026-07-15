@@ -102,7 +102,8 @@
   gap: 8px;
   min-width: 0;
   color: var(--fg);
-  font-size: 1rem;
+  /* 狭いスペースに収まるよう少し小さめ */
+  font-size: 0.88rem;
   font-weight: 400;
 }
 
@@ -131,16 +132,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--fg);
-}
-
-.badge {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
-  border-radius: 999px;
-  padding: 1px 8px;
-  flex-shrink: 0;
 }
 
 .meta {
@@ -220,6 +211,60 @@
   border: none;
   padding: 0;
   cursor: default;
+  touch-action: none;
+  animation: backdropIn 0.2s ease-out both;
+}
+
+.sheet {
+  animation: sheetIn 0.18s ease-out both;
+}
+
+.modalClosing .modalBackdrop {
+  animation: backdropOut 0.16s ease-in both;
+}
+
+.modalClosing .sheet {
+  animation: sheetOut 0.16s ease-in both;
+}
+
+@keyframes backdropIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes backdropOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes sheetIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes sheetOut {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
 }
 
 .sheet {
@@ -237,6 +282,8 @@
   max-height: min(86dvh, 720px);
   overflow: auto;
   -webkit-overflow-scrolling: touch;
+  /* シート端でのスクロールを背後に連鎖させない */
+  overscroll-behavior: contain;
 }
 
 .sheetTitle {

@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { EventEditModal } from '../components/EventEditModal'
 import { FolderIcon } from '../components/FolderIcon'
@@ -14,6 +21,7 @@ import {
   nowIso,
   todayKey,
 } from '../lib/time'
+import { useScrollLock } from '../lib/useScrollLock'
 import { useStore } from '../state/Store'
 import type { Event, Folder, LogKind, LogPrefs, Task } from '../types'
 import styles from './LogScreen.module.css'
@@ -57,6 +65,9 @@ type TotalCol = {
 
 // Month サマリーで表示する日付ラベル（全日表示だと重なるため）
 const MONTH_LABEL_DAYS = [1, 5, 10, 15, 20, 25, 30]
+
+// 円グラフのスイープ描画にかける時間（ラベルはこの後にフェードイン）
+const SWEEP_MS = 350
 
 const DAY_MS = 86400000
 const MONTH_NAMES = [
@@ -474,7 +485,8 @@ function ChartTip({
 function Donut({ slices, totalSec }: { slices: Slice[]; totalSec: number }) {
   const [tip, setTip] = useState<Slice | null>(null)
   const wrapRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => setTip(null), [slices])
+  // 期間が変われば key で再マウントされるので、slices の同一性変化では消さない
+  // （記録中は毎秒再レンダーされ、出した瞬間にチップが消えてしまうため）
   useOutsideClose(wrapRef, tip !== null, () => setTip(null))
   const LABEL_FS = 11
   // ラベル文字列が外へ伸びる分のパディングを含めた viewBox
@@ -516,11 +528,11 @@ function Donut({ slices, totalSec }: { slices: Slice[]; totalSec: number }) {
   for (const s of slices) {
     const frac = totalSec > 0 ? s.sec / totalSec : 0
     if (frac <= 0) continue
-    // 起点を右（従来の上=0 から見て90°）にして、小片が上下に寄りにくいようにする
+    // 0度 = 真上（-90 で SVG の右起点を上へ回す）
     const startDeg = (acc / Math.max(totalSec, 1)) * 360
     const midDeg = startDeg + frac * 180
     acc += s.sec
-    const midRad = (midDeg * Math.PI) / 180
+    const midRad = ((midDeg - 90) * Math.PI) / 180
     const cos = Math.cos(midRad)
     const sin = Math.sin(midRad)
     const onRight = cos >= 0
@@ -564,7 +576,8 @@ function Donut({ slices, totalSec }: { slices: Slice[]; totalSec: number }) {
         />
         {slices.map((s) => {
           const frac = totalSec > 0 ? s.sec / totalSec : 0
-          const rot = (drawAcc / Math.max(totalSec, 1)) * 360
+          const startFrac = drawAcc / Math.max(totalSec, 1)
+          const rot = startFrac * 360
           drawAcc += s.sec
           return (
             <circle
@@ -576,14 +589,23 @@ function Donut({ slices, totalSec }: { slices: Slice[]; totalSec: number }) {
               stroke={s.color}
               strokeWidth={STROKE}
               strokeDasharray={`${frac * C} ${C}`}
-              transform={`rotate(${rot} ${CX} ${CY})`}
+              transform={`rotate(${rot - 90} ${CX} ${CY})`}
               className={styles.donutSlice}
+              style={
+                {
+                  '--c': `${C}`,
+                  '--target': `${frac * C}`,
+                  // 真上から時計回りに一周伸びていくスイープ
+                  animationDelay: `${startFrac * SWEEP_MS}ms`,
+                  animationDuration: `${Math.max(frac * SWEEP_MS, 1)}ms`,
+                } as CSSProperties
+              }
               onClick={() => setTip((cur) => (cur?.id === s.id ? null : s))}
             />
           )
         })}
         {callouts.map((c) => (
-          <g key={c.id}>
+          <g key={c.id} className={styles.callout}>
             <polyline
               points={c.points}
               fill="none"
@@ -620,7 +642,6 @@ function IndividualChart({
 }) {
   const [tip, setTip] = useState<{ key: string; slice: Slice } | null>(null)
   const wrapRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => setTip(null), [columns])
   useOutsideClose(wrapRef, tip !== null, () => setTip(null))
 
   if (chartMode === 'day' && columns[0]) {
@@ -654,20 +675,22 @@ function IndividualChart({
           return (
             <div key={h.key} className={styles.dayHalf}>
               <div className={styles.dayTrackBar}>
-                {segs.map((s) => (
-                  <button
-                    key={`${s.eventId}-${s.start}`}
-                    type="button"
-                    className={styles.daySeg}
-                    title={s.name}
-                    style={{
-                      left: `${((s.start - h.start) / span) * 100}%`,
-                      width: `${((s.end - s.start) / span) * 100}%`,
-                      background: s.color,
-                    }}
-                    onClick={() => onSeg(s.eventId)}
-                  />
-                ))}
+                <div className={styles.fillStill}>
+                  {segs.map((s) => (
+                    <button
+                      key={`${s.eventId}-${s.start}`}
+                      type="button"
+                      className={styles.daySeg}
+                      title={s.name}
+                      style={{
+                        left: `${((s.start - h.start) / span) * 100}%`,
+                        width: `${((s.end - s.start) / span) * 100}%`,
+                        background: s.color,
+                      }}
+                      onClick={() => onSeg(s.eventId)}
+                    />
+                  ))}
+                </div>
               </div>
               <div className={styles.dayTicks}>
                 {h.ticks.map((t) => (
@@ -697,6 +720,7 @@ function IndividualChart({
             return (
               <div key={col.key} className={styles.stackCol}>
                 <div className={styles.stackBar}>
+                  <div className={styles.fillStill}>
                   {col.segs.map((s) => {
                     const segKey = `${s.eventId}-${s.start}`
                     return (
@@ -727,6 +751,7 @@ function IndividualChart({
                       />
                     )
                   })}
+                  </div>
                 </div>
                 <span className={styles.stackLabel}>{col.label}</span>
               </div>
@@ -746,7 +771,6 @@ function TotalsChart({ columns }: { columns: TotalCol[] }) {
   // タップで表示するタスク名（月単位の合算値）
   const [tip, setTip] = useState<{ key: string; slice: Slice } | null>(null)
   const wrapRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => setTip(null), [columns])
   useOutsideClose(wrapRef, tip !== null, () => setTip(null))
   return (
     <div className={styles.totalsWrap} ref={wrapRef}>
@@ -763,6 +787,7 @@ function TotalsChart({ columns }: { columns: TotalCol[] }) {
             return (
               <div key={col.key} className={styles.stackCol}>
                 <div className={styles.stackBar}>
+                  <div className={styles.fillStill}>
                   {col.parts.map((p) => {
                     const bottom = (acc / col.spanSec) * 100
                     acc += p.sec
@@ -787,6 +812,7 @@ function TotalsChart({ columns }: { columns: TotalCol[] }) {
                       />
                     )
                   })}
+                  </div>
                 </div>
                 <span className={styles.stackLabel}>{col.label}</span>
               </div>
@@ -817,6 +843,7 @@ export function LogScreen() {
   const [prefs, setPrefs] = useState<LogPrefs>(() => makeDefaultPrefs())
   const [prefsReady, setPrefsReady] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
+  useScrollLock(pickerOpen)
   const [sheetPos, setSheetPos] = useState<{ top: number; left: number; width: number } | null>(
     null,
   )
@@ -828,6 +855,23 @@ export function LogScreen() {
   const [editId, setEditId] = useState<string | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [yearMode, setYearMode] = useState<'series' | 'total'>('series')
+
+  // 期間タブのオレンジバーをアクティブ位置へスライドさせる
+  const kindTabsRef = useRef<HTMLDivElement | null>(null)
+  const [kindInd, setKindInd] = useState<{ left: number; width: number } | null>(
+    null,
+  )
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = kindTabsRef.current?.querySelector<HTMLElement>(
+        `button[data-tab="${prefs.kind}"]`,
+      )
+      if (el) setKindInd({ left: el.offsetLeft, width: el.offsetWidth })
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [prefs.kind, prefsReady])
 
   // settings から復元（旧形式の設定も正規化して受け入れる）
   useEffect(() => {
@@ -883,19 +927,17 @@ export function LogScreen() {
       }
     }
     const r = rangeBtnRef.current?.getBoundingClientRect()
+    // スマホでも触りやすいよう画面幅近くまで広げ、水平は中央寄せ
+    const pad = 10
+    const width = Math.min(420, window.innerWidth - pad * 2)
+    const left = Math.round((window.innerWidth - width) / 2)
     if (r) {
-      const pad = 8
-      const width = Math.min(r.width, window.innerWidth - pad * 2)
-      const left = Math.min(
-        Math.max(pad, r.left),
-        window.innerWidth - width - pad,
-      )
       // 日付ボタンを覆い隠す（古い期間表記が見えないよう上端で揃える）
       const maxTop = window.innerHeight - 120
       const top = Math.min(r.top, maxTop)
       setSheetPos({ top, left, width })
     } else {
-      setSheetPos({ top: 80, left: 16, width: Math.min(400, window.innerWidth - 32) })
+      setSheetPos({ top: 80, left, width })
     }
     setPickerOpen(true)
   }
@@ -1127,7 +1169,7 @@ export function LogScreen() {
     }, [applied, events, tasks, folders, now])
 
   if (loading || !prefsReady) {
-    return <p className={styles.status}>読み込み中…</p>
+    return <p className={styles.status}>Loading...</p>
   }
 
   return (
@@ -1141,7 +1183,7 @@ export function LogScreen() {
         </div>
       )}
 
-      <div className={styles.kindTabs}>
+      <div className={styles.kindTabs} ref={kindTabsRef}>
         {(
           [
             ['all', 'All'],
@@ -1155,6 +1197,7 @@ export function LogScreen() {
           <button
             key={k}
             type="button"
+            data-tab={k}
             data-text={label}
             className={prefs.kind === k ? styles.kindActive : undefined}
             onClick={() => setKind(k)}
@@ -1162,6 +1205,13 @@ export function LogScreen() {
             {label}
           </button>
         ))}
+        {kindInd && (
+          <span
+            className={styles.kindInd}
+            style={{ left: kindInd.left, width: kindInd.width }}
+            aria-hidden
+          />
+        )}
       </div>
 
       {prefs.kind !== 'all' && (
@@ -1214,9 +1264,14 @@ export function LogScreen() {
             {totalSec === 0 ? (
               <p className={styles.status}>No Data</p>
             ) : prefs.kind === 'year' && yearMode === 'total' ? (
-              <TotalsChart columns={totalColumns} />
+              // key: 期間が変わったら伸長アニメを再生し直す
+              <TotalsChart
+                key={`${prefs.kind}-${applied.start}`}
+                columns={totalColumns}
+              />
             ) : (
               <IndividualChart
+                key={`${prefs.kind}-${applied.start}`}
                 columns={columns}
                 chartMode={chartMode}
                 onSeg={setEditId}
@@ -1305,7 +1360,11 @@ export function LogScreen() {
       ) : (
         <>
           <div className={styles.pieCenter}>
-            <Donut slices={pieTaskSlices} totalSec={totalSec} />
+            <Donut
+              key={`${prefs.kind}-${applied.start}`}
+              slices={pieTaskSlices}
+              totalSec={totalSec}
+            />
           </div>
           <table className={styles.table}>
             <tbody>
@@ -1339,7 +1398,11 @@ export function LogScreen() {
       ) : (
         <>
           <div className={styles.pieCenter}>
-            <Donut slices={pieFolderSlices} totalSec={totalSec} />
+            <Donut
+              key={`${prefs.kind}-${applied.start}`}
+              slices={pieFolderSlices}
+              totalSec={totalSec}
+            />
           </div>
           <table className={styles.table}>
             <tbody>

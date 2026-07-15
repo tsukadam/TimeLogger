@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { DateField } from './DateField'
 import { FolderSelect } from './FolderSelect'
 import { TaskSelect } from './TaskSelect'
 import { TimeField } from './TimeField'
 import {
+  addDaysKey,
   dateTimeInputToIso,
   isoToDateInput,
   isoToTimeInput,
 } from '../lib/time'
+import { useScrollLock } from '../lib/useScrollLock'
 import { useStore } from '../state/Store'
 import type { Event } from '../types'
 import styles from './EventEditModal.module.css'
@@ -41,10 +44,20 @@ export function EventEditModal({
   const [formEndDate, setFormEndDate] = useState('')
   const [formEndTime, setFormEndTime] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
+  const [closing, setClosing] = useState(false)
+  useScrollLock(true)
+
+  // 閉じアニメーションを流してからアンマウント
+  const close = () => {
+    if (closing) return
+    setClosing(true)
+    window.setTimeout(onClose, 160)
+  }
 
   useEffect(() => {
     if (!editing) {
-      onClose()
+      // 閉じアニメーション中は timeout 側の onClose に任せる
+      if (!closing) onClose()
       return
     }
     const task = tasks.find((t) => t.id === editing.taskId)
@@ -55,7 +68,7 @@ export function EventEditModal({
     setFormEndDate(editing.endedAt ? isoToDateInput(editing.endedAt) : '')
     setFormEndTime(editing.endedAt ? isoToTimeInput(editing.endedAt) : '')
     setFormError(null)
-  }, [editing, tasks, onClose])
+  }, [editing, tasks, onClose, closing])
 
   const folderTasks = useMemo(
     () =>
@@ -92,7 +105,7 @@ export function EventEditModal({
         startedAt,
         endedAt,
       })
-      onClose()
+      close()
     } catch (e) {
       setFormError(e instanceof Error ? e.message : '保存に失敗しました')
     }
@@ -103,7 +116,7 @@ export function EventEditModal({
     setFormError(null)
     try {
       await deleteEvent(eventId)
-      onClose()
+      close()
     } catch (e) {
       setFormError(e instanceof Error ? e.message : '削除に失敗しました')
     }
@@ -111,12 +124,16 @@ export function EventEditModal({
 
   // スクロールコンテナ内の fixed は実機で上端まで覆えないことがあるため body に出す
   return createPortal(
-    <div className={styles.modalRoot}>
+    <div
+      className={
+        closing ? `${styles.modalRoot} ${styles.modalClosing}` : styles.modalRoot
+      }
+    >
       <button
         type="button"
         className={styles.modalBackdrop}
         aria-label="閉じる"
-        onClick={onClose}
+        onClick={close}
       />
       <div
         className={styles.sheet}
@@ -158,17 +175,19 @@ export function EventEditModal({
         <div className={styles.field}>
           <span>開始</span>
           <div className={styles.dateTimeRow}>
-            <input
-              type="date"
-              className={styles.dateInput}
+            <DateField
               value={formStartDate}
               disabled={busy}
-              onChange={(e) => setFormStartDate(e.target.value)}
+              onChange={setFormStartDate}
+              aria-label="開始日"
             />
             <TimeField
               value={formStartTime}
               disabled={busy}
               onChange={setFormStartTime}
+              onDayChange={(d) =>
+                setFormStartDate((cur) => (cur ? addDaysKey(cur, d) : cur))
+              }
               aria-label="開始時刻"
             />
           </div>
@@ -178,17 +197,19 @@ export function EventEditModal({
           <div className={styles.field}>
             <span>終了</span>
             <div className={styles.dateTimeRow}>
-              <input
-                type="date"
-                className={styles.dateInput}
+              <DateField
                 value={formEndDate}
                 disabled={busy}
-                onChange={(e) => setFormEndDate(e.target.value)}
+                onChange={setFormEndDate}
+                aria-label="終了日"
               />
               <TimeField
                 value={formEndTime}
                 disabled={busy}
                 onChange={setFormEndTime}
+                onDayChange={(d) =>
+                  setFormEndDate((cur) => (cur ? addDaysKey(cur, d) : cur))
+                }
                 aria-label="終了時刻"
               />
             </div>

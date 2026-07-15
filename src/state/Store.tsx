@@ -39,6 +39,8 @@ type StoreValue = {
     folderId: string,
     patch: { name: string; color: string },
   ) => Promise<void>
+  /** フォルダを1つ上（-1）または下（+1）へ移動 */
+  moveFolder: (folderId: string, dir: 1 | -1) => Promise<void>
   updateTask: (
     taskId: string,
     patch: { name: string; color: string; folderId: string },
@@ -275,6 +277,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const savedTasks = await putResource('tasks', nextTasks)
         setTasksFile(savedTasks)
         // ログ（events）の名前・色スナップショットは追従しない
+      })
+    },
+    [runWrite, tasksFile],
+  )
+
+  const moveFolder = useCallback(
+    async (folderId: string, dir: 1 | -1) => {
+      if (!tasksFile) return
+      const sorted = [...tasksFile.folders].sort(
+        (a, b) => a.sortOrder - b.sortOrder,
+      )
+      const i = sorted.findIndex((f) => f.id === folderId)
+      const j = i + dir
+      if (i < 0 || j < 0 || j >= sorted.length) return
+      await runWrite(async () => {
+        const t = nowIso()
+        ;[sorted[i], sorted[j]] = [sorted[j]!, sorted[i]!]
+        // 入れ替え後の並びで sortOrder を振り直す
+        const next: TasksFile = {
+          ...tasksFile,
+          folders: sorted.map((f, idx) =>
+            f.sortOrder === idx ? f : { ...f, sortOrder: idx, updatedAt: t },
+          ),
+          updatedAt: t,
+        }
+        const saved = await putResource('tasks', next)
+        setTasksFile(saved)
       })
     },
     [runWrite, tasksFile],
@@ -601,6 +630,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     addFolder,
     addTask,
     updateFolder,
+    moveFolder,
     updateTask,
     updateEvent,
     addEvent,

@@ -5,6 +5,7 @@ import { FolderSelect } from '../components/FolderSelect'
 import { TaskSelect } from '../components/TaskSelect'
 import { TimeField } from '../components/TimeField'
 import {
+  addDaysKey,
   dateKey,
   dateTimeInputToIso,
   durationLabel,
@@ -14,6 +15,8 @@ import {
   isoToTimeInput,
   nowIso,
 } from '../lib/time'
+import { DateField } from '../components/DateField'
+import { useScrollLock } from '../lib/useScrollLock'
 import { useStore } from '../state/Store'
 import type { Event } from '../types'
 import styles from './ActivityScreen.module.css'
@@ -112,6 +115,7 @@ export function ActivityScreen() {
   const [visible, setVisible] = useState(PAGE)
   const [now, setNow] = useState(() => Date.now())
   const [sheet, setSheet] = useState<SheetState>({ type: 'closed' })
+  const [sheetClosing, setSheetClosing] = useState(false)
   const [formFolderId, setFormFolderId] = useState('')
   const [formTaskId, setFormTaskId] = useState('')
   const [formStartDate, setFormStartDate] = useState('')
@@ -120,6 +124,7 @@ export function ActivityScreen() {
   const [formEndTime, setFormEndTime] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const sentinelRef = useRef<HTMLDivElement | null>(null)
+  useScrollLock(sheet.type !== 'closed')
 
   const hasLive = useMemo(() => events.some((e) => e.endedAt === null), [events])
 
@@ -244,8 +249,14 @@ export function ActivityScreen() {
   }
 
   const closeSheet = () => {
-    setSheet({ type: 'closed' })
-    setFormError(null)
+    // 閉じアニメーションを流してからアンマウント
+    if (sheetClosing) return
+    setSheetClosing(true)
+    window.setTimeout(() => {
+      setSheetClosing(false)
+      setSheet({ type: 'closed' })
+      setFormError(null)
+    }, 160)
   }
 
   const submitSheet = async () => {
@@ -289,7 +300,7 @@ export function ActivityScreen() {
   }
 
   if (loading) {
-    return <p className={styles.status}>読み込み中…</p>
+    return <p className={styles.status}>Loading...</p>
   }
 
   const sheetOpen = sheet.type !== 'closed'
@@ -343,9 +354,6 @@ export function ActivityScreen() {
                           <span className={styles.folderName}>
                             {ev.folderName}
                           </span>
-                          {ev.endedAt === null && (
-                            <span className={styles.badge}>Tracking...</span>
-                          )}
                         </div>
                         <div className={styles.meta}>
                           {formatEventRange(ev.startedAt, ev.endedAt)}
@@ -380,7 +388,13 @@ export function ActivityScreen() {
 
       {sheetOpen &&
         createPortal(
-        <div className={styles.modalRoot}>
+        <div
+          className={
+            sheetClosing
+              ? `${styles.modalRoot} ${styles.modalClosing}`
+              : styles.modalRoot
+          }
+        >
           <button
             type="button"
             className={styles.modalBackdrop}
@@ -429,17 +443,19 @@ export function ActivityScreen() {
             <div className={styles.field}>
               <span>開始</span>
               <div className={styles.dateTimeRow}>
-                <input
-                  type="date"
-                  className={styles.dateInput}
+                <DateField
                   value={formStartDate}
                   disabled={busy}
-                  onChange={(e) => setFormStartDate(e.target.value)}
+                  onChange={setFormStartDate}
+                  aria-label="開始日"
                 />
                 <TimeField
                   value={formStartTime}
                   disabled={busy}
                   onChange={setFormStartTime}
+                  onDayChange={(d) =>
+                    setFormStartDate((cur) => (cur ? addDaysKey(cur, d) : cur))
+                  }
                   aria-label="開始時刻"
                 />
               </div>
@@ -449,17 +465,19 @@ export function ActivityScreen() {
               <div className={styles.field}>
                 <span>終了</span>
                 <div className={styles.dateTimeRow}>
-                  <input
-                    type="date"
-                    className={styles.dateInput}
+                  <DateField
                     value={formEndDate}
                     disabled={busy}
-                    onChange={(e) => setFormEndDate(e.target.value)}
+                    onChange={setFormEndDate}
+                    aria-label="終了日"
                   />
                   <TimeField
                     value={formEndTime}
                     disabled={busy}
                     onChange={setFormEndTime}
+                    onDayChange={(d) =>
+                      setFormEndDate((cur) => (cur ? addDaysKey(cur, d) : cur))
+                    }
                     aria-label="終了時刻"
                   />
                 </div>

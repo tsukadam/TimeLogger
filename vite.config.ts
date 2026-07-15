@@ -1,4 +1,4 @@
-import path from 'node:path'
+﻿import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -11,7 +11,7 @@ export default defineConfig(({ command }) => ({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon-v2.svg'],
+      includeAssets: ['favicon-v3.svg', 'apple-touch-icon-v3.png'],
       manifest: {
         name: 'TimeLogger',
         short_name: 'TimeLogger',
@@ -26,15 +26,21 @@ export default defineConfig(({ command }) => ({
         scope: './',
         icons: [
           {
-            src: 'pwa-icon-v2.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
+            src: 'pwa-icon-v3-192.png',
+            sizes: '192x192',
+            type: 'image/png',
             purpose: 'any',
           },
           {
-            src: 'pwa-icon-v2.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
+            src: 'pwa-icon-v3-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: 'pwa-icon-v3-512.png',
+            sizes: '512x512',
+            type: 'image/png',
             purpose: 'maskable',
           },
         ],

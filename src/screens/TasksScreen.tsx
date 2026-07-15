@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { FolderIcon } from '../components/FolderIcon'
 import { FolderSelect } from '../components/FolderSelect'
@@ -9,6 +9,7 @@ import {
   overlapSecondsOnDay,
   todayKey,
 } from '../lib/time'
+import { useScrollLock } from '../lib/useScrollLock'
 import { useStore } from '../state/Store'
 import type { Folder, Task } from '../types'
 import styles from './TasksScreen.module.css'
@@ -81,6 +82,7 @@ export function TasksScreen() {
     addFolder,
     addTask,
     updateFolder,
+    moveFolder,
     updateTask,
     startTask,
     stopCurrent,
@@ -90,6 +92,7 @@ export function TasksScreen() {
 
   const [now, setNow] = useState(() => Date.now())
   const [sheet, setSheet] = useState<Sheet>({ type: 'closed' })
+  const [sheetClosing, setSheetClosing] = useState(false)
   const [addKind, setAddKind] = useState<AddKind>('folder')
   const [name, setName] = useState('')
   const [color, setColor] = useState(FOLDER_PALETTE[0]!)
@@ -103,6 +106,7 @@ export function TasksScreen() {
 
   const sheetOpen = sheet.type !== 'closed'
   const isEdit = sheet.type === 'edit-folder' || sheet.type === 'edit-task'
+  useScrollLock(sheetOpen)
 
   useEffect(() => {
     if (!current) return
@@ -164,6 +168,30 @@ export function TasksScreen() {
     }))
   }, [folders, tasks])
 
+  // フォルダ並び替え時、各セクションが元の位置から滑って移動するように（FLIP）
+  const rootRef = useRef<HTMLElement | null>(null)
+  const folderTopsRef = useRef<Map<string, number>>(new Map())
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+    const prev = folderTopsRef.current
+    const next = new Map<string, number>()
+    root.querySelectorAll<HTMLElement>('[data-folder-id]').forEach((el) => {
+      const id = el.dataset.folderId
+      if (!id) return
+      const top = el.offsetTop
+      next.set(id, top)
+      const old = prev.get(id)
+      if (old !== undefined && Math.abs(old - top) > 1) {
+        el.animate(
+          [{ transform: `translateY(${old - top}px)` }, { transform: 'none' }],
+          { duration: 220, easing: 'ease' },
+        )
+      }
+    })
+    folderTopsRef.current = next
+  }, [folders])
+
   // 記録中タスクが画面外にあるとき、上下どちらにあるかを示す
   const runningTaskId = current?.taskId ?? null
   const [runningOff, setRunningOff] = useState<'above' | 'below' | null>(null)
@@ -206,8 +234,14 @@ export function TasksScreen() {
   }
 
   function closeSheet() {
-    setSheet({ type: 'closed' })
-    setName('')
+    // 閉じアニメーションを流してからアンマウント
+    if (sheetClosing) return
+    setSheetClosing(true)
+    window.setTimeout(() => {
+      setSheetClosing(false)
+      setSheet({ type: 'closed' })
+      setName('')
+    }, 160)
   }
 
   function openAdd() {
@@ -357,11 +391,11 @@ export function TasksScreen() {
     tasks.some((t) => t.folderId === sheet.id)
 
   if (loading) {
-    return <p className={styles.status}>読み込み中…</p>
+    return <p className={styles.status}>Loading...</p>
   }
 
   return (
-    <section className={styles.root}>
+    <section className={styles.root} ref={rootRef}>
       {error && (
         <div className={styles.error} role="alert">
           <span>{error}</span>
@@ -384,16 +418,42 @@ export function TasksScreen() {
       )}
 
       {byFolder.map(({ folder, tasks: folderTasks }, index) => (
-        <section key={folder.id} className={styles.folderSection}>
+        <section
+          key={folder.id}
+          className={styles.folderSection}
+          data-folder-id={folder.id}
+        >
           {index > 0 && <div className={styles.divider} />}
-          <button
-            type="button"
-            className={styles.folderHead}
-            onClick={() => openEditFolder(folder)}
-          >
-            <FolderIcon color={folder.color} size={16} />
-            <h2 className={styles.folderName}>{folder.name}</h2>
-          </button>
+          <div className={styles.folderRow}>
+            <button
+              type="button"
+              className={styles.folderHead}
+              onClick={() => openEditFolder(folder)}
+            >
+              <FolderIcon color={folder.color} size={16} />
+              <h2 className={styles.folderName}>{folder.name}</h2>
+            </button>
+            <div className={styles.folderOrder}>
+              <button
+                type="button"
+                className={styles.orderBtn}
+                disabled={busy || index === 0}
+                aria-label={`${folder.name} を上へ`}
+                onClick={() => void moveFolder(folder.id, -1)}
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                className={styles.orderBtn}
+                disabled={busy || index === byFolder.length - 1}
+                aria-label={`${folder.name} を下へ`}
+                onClick={() => void moveFolder(folder.id, 1)}
+              >
+                ↓
+              </button>
+            </div>
+          </div>
 
           {folderTasks.length === 0 && (
             <button
@@ -486,7 +546,13 @@ export function TasksScreen() {
 
       {sheetOpen &&
         createPortal(
-        <div className={styles.modalRoot}>
+        <div
+          className={
+            sheetClosing
+              ? `${styles.modalRoot} ${styles.modalClosing}`
+              : styles.modalRoot
+          }
+        >
           <button
             type="button"
             className={styles.modalBackdrop}

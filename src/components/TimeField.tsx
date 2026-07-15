@@ -1,17 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { TimeWheel } from './TimeWheel'
+import { useScrollLock } from '../lib/useScrollLock'
 import styles from './TimeField.module.css'
 
 /** タップでむき出しのドラムロール。外側タップでその値を確定 */
 export function TimeField({
   value,
   onChange,
+  onDayChange,
   disabled,
   'aria-label': ariaLabel,
 }: {
   value: string
   onChange: (v: string) => void
+  /** ロールが 23→0 / 0→23 を跨いだとき、日付を前後させるために呼ばれる */
+  onDayChange?: (deltaDays: number) => void
   disabled?: boolean
   'aria-label'?: string
 }) {
@@ -23,6 +27,7 @@ export function TimeField({
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
 
   draftRef.current = draft
+  useScrollLock(open)
 
   const commitClose = () => {
     onChange(draftRef.current)
@@ -88,14 +93,12 @@ export function TimeField({
         pos &&
         createPortal(
           <>
-            {/* 外側タップで確定して閉じる。背面の要素にはタップを通さない */}
-            <div
+            {/* 外側タップで確定して閉じる。button の click で消費するので背面へは通らない */}
+            <button
+              type="button"
               className={styles.overlay}
-              onPointerDown={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                commitClose()
-              }}
+              aria-label="確定して閉じる"
+              onClick={commitClose}
             />
             <div
               ref={panelRef}
@@ -110,6 +113,7 @@ export function TimeField({
                   setDraft(v)
                   draftRef.current = v
                 }}
+                onDayChange={onDayChange}
               />
             </div>
           </>,

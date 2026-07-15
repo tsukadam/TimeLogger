@@ -6,7 +6,8 @@
   --accent: #e08a3c;
   --line: #2a2f3a;
   --panel: #171a21;
-  --panel-2: #1e232d;
+  /* パネル内の一段明るいブロック。スマホでの視認性を考えて明るめ */
+  --panel-2: #2a303d;
   --danger: #e25b5b;
   --ok: #5bb98c;
   --safe-top: env(safe-area-inset-top, 0px);
