@@ -42,7 +42,8 @@ export default defineConfig(({ command }) => ({
         ],
       },
       workbox: {
-        navigateFallbackDenylist: [/^\/api/, /^\/data/],
+        // 本番はサブパス /timelogger/ 配下なので先頭一致ではなくパス中一致で除外する
+        navigateFallbackDenylist: [/\/api\//, /\/data\//],
         runtimeCaching: [
           {
             urlPattern: ({ url }) =>
