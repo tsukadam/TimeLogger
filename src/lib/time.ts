@@ -3,6 +3,15 @@ const TZ = 'Asia/Tokyo'
 /** 経過1秒未満は誤操作として記録に残さない（ms 精度で判定） */
 export const MIN_RECORD_MS = 1000
 
+/** 1日の長さ */
+export const DAY_MS = 86400000
+export const DAY_SEC = 86400
+
+/** 2桁ゼロ埋め */
+export function pad2(n: number): string {
+  return String(n).padStart(2, '0')
+}
+
 /**
  * 東京時刻の ISO（ミリ秒付き）。
  * 処理用の正本。表示は別途切り捨てる。
@@ -61,7 +70,7 @@ function partsInTokyo(date: Date) {
 /** 日付キー（グルーピング用） YYYY-MM-DD — 開始瞬間の日付（切り捨て） */
 export function dateKey(iso: string): string {
   const p = partsInTokyo(floorToSecond(iso))
-  return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`
+  return `${p.year}-${pad2(p.month)}-${pad2(p.day)}`
 }
 
 export function todayKey(now = new Date()): string {
@@ -85,7 +94,7 @@ export function formatDateDivider(iso: string): string {
  */
 function formatTimeHms(iso: string): string {
   const p = partsInTokyo(floorToSecond(iso))
-  return `${p.hour}:${String(p.minute).padStart(2, '0')}:${String(p.second).padStart(2, '0')}`
+  return `${p.hour}:${pad2(p.minute)}:${pad2(p.second)}`
 }
 
 /** 1:55:03 → 23:01:00 （記録中は → …） */
@@ -135,16 +144,10 @@ export function durationLabel(
   return formatDurationHms(durationSeconds(startedAt, endedAt, now))
 }
 
-/** ISO → 日付欄用 YYYY-MM-DD（東京） */
-export function isoToDateInput(iso: string): string {
-  return dateKey(iso)
-}
-
 /** ISO → 時刻欄用 HH:mm:ss（東京・24時間） */
 export function isoToTimeInput(iso: string): string {
   const p = partsInTokyo(floorToSecond(iso))
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${pad(p.hour)}:${pad(p.minute)}:${pad(p.second)}`
+  return `${pad2(p.hour)}:${pad2(p.minute)}:${pad2(p.second)}`
 }
 
 /**
@@ -163,8 +166,7 @@ export function dateTimeInputToIso(date: string, time: string): string {
   if (h > 23 || min > 59 || sec > 59) {
     throw new Error('時刻の値が範囲外です')
   }
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${date.trim()}T${pad(h)}:${pad(min)}:${pad(sec)}.000+09:00`
+  return `${date.trim()}T${pad2(h)}:${pad2(min)}:${pad2(sec)}.000+09:00`
 }
 
 /** 東京の「その日の0時」（ms） YYYY-MM-DD */
@@ -174,28 +176,80 @@ export function dayStartMs(dayKey: string): number {
 
 /** dayKey に日数を加算 */
 export function addDaysKey(dayKey: string, days: number): string {
-  return dateKey(nowIso(new Date(dayStartMs(dayKey) + days * 86400000)))
+  return dateKey(nowIso(new Date(dayStartMs(dayKey) + days * DAY_MS)))
 }
 
 /** その日を含む週の月曜（東京） */
 export function mondayKeyOf(dayKey: string): string {
   const start = dayStartMs(dayKey)
-  const epochDay = Math.floor((start + 9 * 3600 * 1000) / 86400000)
+  const epochDay = Math.floor((start + 9 * 3600 * 1000) / DAY_MS)
   const sundayBased = (epochDay + 4) % 7
   const mondayOffset = (sundayBased + 6) % 7
   return addDaysKey(dayKey, -mondayOffset)
 }
 
 export function daysInMonth(year: number, month1to12: number): number {
-  const pad = (n: number) => String(n).padStart(2, '0')
   const nextY = month1to12 === 12 ? year + 1 : year
   const nextM = month1to12 === 12 ? 1 : month1to12 + 1
   return Math.round(
-    (dayStartMs(`${nextY}-${pad(nextM)}-01`) -
-      dayStartMs(`${year}-${pad(month1to12)}-01`)) /
-      86400000,
+    (dayStartMs(monthKey(nextY, nextM)) - dayStartMs(monthKey(year, month1to12))) /
+      DAY_MS,
   )
 }
+
+/** dayKey → { y, m } */
+export function ymParts(dayKey: string): { y: number; m: number } {
+  return {
+    y: Number(dayKey.slice(0, 4)),
+    m: Number(dayKey.slice(5, 7)),
+  }
+}
+
+/** その月の1日の dayKey */
+export function monthKey(y: number, m: number): string {
+  return `${y}-${pad2(m)}-01`
+}
+
+/** dayKey → 7/14 表示（ゼロ埋めなし） */
+export function formatMd(dayKey: string): string {
+  return `${Number(dayKey.slice(5, 7))}/${Number(dayKey.slice(8, 10))}`
+}
+
+/** dayKey → 2026/7/14 表示（ゼロ埋めなし） */
+export function formatYmd(dayKey: string): string {
+  return `${Number(dayKey.slice(0, 4))}/${formatMd(dayKey)}`
+}
+
+/** dayKey → 曜日1文字（月・火…） */
+export function weekdayShort(dayKey: string): string {
+  return new Intl.DateTimeFormat('ja-JP', {
+    timeZone: TZ,
+    weekday: 'short',
+  }).format(new Date(dayStartMs(dayKey)))
+}
+
+/**
+ * 日付キーへ n ヶ月加算。同日が無い月（例: 1/31 の1ヶ月後）は翌月1日へ繰り上げる
+ */
+export function addMonthsKey(dayKey: string, n: number): string {
+  const y = Number(dayKey.slice(0, 4))
+  const m = Number(dayKey.slice(5, 7))
+  const d = Number(dayKey.slice(8, 10))
+  const total = m - 1 + n
+  let y2 = y + Math.floor(total / 12)
+  let m2 = (((total % 12) + 12) % 12) + 1
+  if (d > daysInMonth(y2, m2)) {
+    m2 += 1
+    if (m2 > 12) {
+      m2 = 1
+      y2 += 1
+    }
+    return monthKey(y2, m2)
+  }
+  return `${y2}-${pad2(m2)}-${pad2(d)}`
+}
+
+/** 記録が dayKey の1日と重なる秒数（記録中は now まで） */
 export function overlapSecondsOnDay(
   startedAt: string,
   endedAt: string | null,
@@ -206,8 +260,8 @@ export function overlapSecondsOnDay(
   const end = endedAt ? new Date(endedAt).getTime() : nowMs
   if (!(end > start)) return 0
 
-  const dayStart = new Date(`${dayKey}T00:00:00.000+09:00`).getTime()
-  const dayEnd = dayStart + 24 * 60 * 60 * 1000
+  const dayStart = dayStartMs(dayKey)
+  const dayEnd = dayStart + DAY_MS
   const a = Math.max(start, dayStart)
   const b = Math.min(end, dayEnd)
   if (!(b > a)) return 0

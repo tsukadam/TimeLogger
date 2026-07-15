@@ -11,11 +11,11 @@ import {
   durationLabel,
   formatDateDivider,
   formatEventRange,
-  isoToDateInput,
   isoToTimeInput,
   nowIso,
 } from '../lib/time'
 import { DateField } from '../components/DateField'
+import { useNowTick } from '../lib/useNowTick'
 import { useScrollLock } from '../lib/useScrollLock'
 import { useStore } from '../state/Store'
 import type { Event } from '../types'
@@ -96,7 +96,7 @@ function findOldestHole(
 
 function msToInputs(ms: number): { date: string; time: string } {
   const iso = nowIso(new Date(ms))
-  return { date: isoToDateInput(iso), time: isoToTimeInput(iso) }
+  return { date: dateKey(iso), time: isoToTimeInput(iso) }
 }
 
 export function ActivityScreen() {
@@ -113,7 +113,6 @@ export function ActivityScreen() {
     deleteEvent,
   } = useStore()
   const [visible, setVisible] = useState(PAGE)
-  const [now, setNow] = useState(() => Date.now())
   const [sheet, setSheet] = useState<SheetState>({ type: 'closed' })
   const [sheetClosing, setSheetClosing] = useState(false)
   const [formFolderId, setFormFolderId] = useState('')
@@ -127,6 +126,8 @@ export function ActivityScreen() {
   useScrollLock(sheet.type !== 'closed')
 
   const hasLive = useMemo(() => events.some((e) => e.endedAt === null), [events])
+  // 記録中カードの経過表示をなめらかにするため、この画面だけ 250ms 刻み
+  const now = useNowTick(hasLive, 250)
 
   const editing = useMemo(
     () =>
@@ -144,12 +145,6 @@ export function ActivityScreen() {
         .sort((a, b) => a.sortOrder - b.sortOrder),
     [tasks, formFolderId],
   )
-
-  useEffect(() => {
-    if (!hasLive) return
-    const id = window.setInterval(() => setNow(Date.now()), 250)
-    return () => window.clearInterval(id)
-  }, [hasLive])
 
   useEffect(() => {
     setVisible(PAGE)
@@ -213,9 +208,9 @@ export function ActivityScreen() {
     const task = tasks.find((t) => t.id === ev.taskId)
     setFormFolderId(task?.folderId ?? ev.folderId)
     setFormTaskId(ev.taskId)
-    setFormStartDate(isoToDateInput(ev.startedAt))
+    setFormStartDate(dateKey(ev.startedAt))
     setFormStartTime(isoToTimeInput(ev.startedAt))
-    setFormEndDate(ev.endedAt ? isoToDateInput(ev.endedAt) : '')
+    setFormEndDate(ev.endedAt ? dateKey(ev.endedAt) : '')
     setFormEndTime(ev.endedAt ? isoToTimeInput(ev.endedAt) : '')
     setFormError(null)
     setSheet({ type: 'edit', id: ev.id })

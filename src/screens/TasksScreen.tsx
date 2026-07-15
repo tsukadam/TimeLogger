@@ -9,6 +9,7 @@ import {
   overlapSecondsOnDay,
   todayKey,
 } from '../lib/time'
+import { useNowTick } from '../lib/useNowTick'
 import { useScrollLock } from '../lib/useScrollLock'
 import { useStore } from '../state/Store'
 import type { Folder, Task } from '../types'
@@ -90,7 +91,6 @@ export function TasksScreen() {
     deleteTask,
   } = useStore()
 
-  const [now, setNow] = useState(() => Date.now())
   const [sheet, setSheet] = useState<Sheet>({ type: 'closed' })
   const [sheetClosing, setSheetClosing] = useState(false)
   const [addKind, setAddKind] = useState<AddKind>('folder')
@@ -107,12 +107,7 @@ export function TasksScreen() {
   const sheetOpen = sheet.type !== 'closed'
   const isEdit = sheet.type === 'edit-folder' || sheet.type === 'edit-task'
   useScrollLock(sheetOpen)
-
-  useEffect(() => {
-    if (!current) return
-    const id = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(id)
-  }, [current])
+  const now = useNowTick(current !== null)
 
   useEffect(() => {
     if (!folderId && folders[0]) setFolderId(folders[0].id)

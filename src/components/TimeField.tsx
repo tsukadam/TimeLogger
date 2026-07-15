@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { TimeWheel } from './TimeWheel'
+import { useEscapeClose } from '../lib/useOutsideClose'
 import { useScrollLock } from '../lib/useScrollLock'
 import styles from './TimeField.module.css'
 
@@ -57,17 +58,7 @@ export function TimeField({
     setPos({ top, left })
   }, [open])
 
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') commitClose()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('keydown', onKey)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
+  useEscapeClose(open, commitClose)
 
   return (
     <div className={styles.wrap} ref={rootRef}>

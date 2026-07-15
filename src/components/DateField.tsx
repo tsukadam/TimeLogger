@@ -1,12 +1,9 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { daysInMonth, todayKey } from '../lib/time'
+import { daysInMonth, pad2, todayKey } from '../lib/time'
+import { useEscapeClose } from '../lib/useOutsideClose'
 import { useScrollLock } from '../lib/useScrollLock'
 import styles from './DateField.module.css'
-
-function pad2(n: number) {
-  return String(n).padStart(2, '0')
-}
 
 /**
  * LOG のカレンダーと同じ見た目の日付ピッカー。
@@ -37,14 +34,7 @@ export function DateField({
     setView({ y: Number(src.slice(0, 4)), m: Number(src.slice(5, 7)) })
   }, [open, value])
 
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [open])
+  useEscapeClose(open, () => setOpen(false))
 
   const shiftMonth = (d: number) => {
     let m = view.m + d

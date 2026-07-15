@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { FolderIcon } from './FolderIcon'
+import { useOutsideClose } from '../lib/useOutsideClose'
 import type { Folder } from '../types'
 import styles from './FolderSelect.module.css'
 
@@ -19,14 +20,7 @@ export function FolderSelect({
   const listId = useId()
   const selected = folders.find((f) => f.id === value) ?? folders[0] ?? null
 
-  useEffect(() => {
-    if (!open) return
-    const onDoc = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [open])
+  useOutsideClose(rootRef, open, () => setOpen(false))
 
   return (
     <div className={styles.root} ref={rootRef}>

@@ -6,8 +6,8 @@ import { TaskSelect } from './TaskSelect'
 import { TimeField } from './TimeField'
 import {
   addDaysKey,
+  dateKey,
   dateTimeInputToIso,
-  isoToDateInput,
   isoToTimeInput,
 } from '../lib/time'
 import { useScrollLock } from '../lib/useScrollLock'
@@ -62,9 +62,9 @@ export function EventEditModal({
     const task = tasks.find((t) => t.id === editing.taskId)
     setFormFolderId(task?.folderId ?? editing.folderId)
     setFormTaskId(editing.taskId)
-    setFormStartDate(isoToDateInput(editing.startedAt))
+    setFormStartDate(dateKey(editing.startedAt))
     setFormStartTime(isoToTimeInput(editing.startedAt))
-    setFormEndDate(editing.endedAt ? isoToDateInput(editing.endedAt) : '')
+    setFormEndDate(editing.endedAt ? dateKey(editing.endedAt) : '')
     setFormEndTime(editing.endedAt ? isoToTimeInput(editing.endedAt) : '')
     setFormError(null)
   }, [editing, tasks, onClose, closing])

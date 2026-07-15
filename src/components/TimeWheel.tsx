@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { DAY_SEC, pad2 } from '../lib/time'
 import styles from './TimeWheel.module.css'
 
 const ITEM = 32
@@ -6,7 +7,6 @@ const HEIGHT = 160
 const CENTER = HEIGHT / 2 - ITEM / 2
 // 慣性: 離した速度 × この時間ぶんだけ滑走する（大きいほどよく回る）
 const GLIDE_MS = 280
-const DAY_SEC = 86400
 
 function parseTime(value: string): [number, number, number] {
   const m = value.trim().match(/^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$/)
@@ -227,7 +227,7 @@ function WheelColumn({
             animateTo(it.key, 200, true)
           }}
         >
-          {String(it.num).padStart(2, '0')}
+          {pad2(it.num)}
         </button>
       ))}
     </div>
@@ -259,9 +259,8 @@ export function TimeWheel({
     const next = raw - dayDelta * DAY_SEC
     if (next !== totalRef.current) {
       totalRef.current = next
-      const pad = (n: number) => String(n).padStart(2, '0')
       onChange(
-        `${pad(Math.floor(next / 3600))}:${pad(Math.floor(next / 60) % 60)}:${pad(next % 60)}`,
+        `${pad2(Math.floor(next / 3600))}:${pad2(Math.floor(next / 60) % 60)}:${pad2(next % 60)}`,
       )
     }
     if (dayDelta !== 0) onDayChange?.(dayDelta)

@@ -10,17 +10,27 @@ import { createPortal } from 'react-dom'
 import { EventEditModal } from '../components/EventEditModal'
 import { FolderIcon } from '../components/FolderIcon'
 import {
+  DAY_MS,
   addDaysKey,
+  addMonthsKey,
   dateKey,
   dayStartMs,
   daysInMonth,
   durationLabel,
   formatDurationHms,
   formatEventRange,
+  formatMd,
+  formatYmd,
   mondayKeyOf,
+  monthKey,
   nowIso,
+  pad2,
   todayKey,
+  weekdayShort,
+  ymParts,
 } from '../lib/time'
+import { useNowTick } from '../lib/useNowTick'
+import { useOutsideClose } from '../lib/useOutsideClose'
 import { useScrollLock } from '../lib/useScrollLock'
 import { useStore } from '../state/Store'
 import type { Event, Folder, LogKind, LogPrefs, Task } from '../types'
@@ -69,7 +79,6 @@ const MONTH_LABEL_DAYS = [1, 5, 10, 15, 20, 25, 30]
 // 円グラフのスイープ描画にかける時間（ラベルはこの後にフェードイン）
 const SWEEP_MS = 350
 
-const DAY_MS = 86400000
 const MONTH_NAMES = [
   '1月',
   '2月',
@@ -84,57 +93,6 @@ const MONTH_NAMES = [
   '11月',
   '12月',
 ]
-
-function pad2(n: number) {
-  return String(n).padStart(2, '0')
-}
-
-function ymParts(dayKey: string) {
-  return {
-    y: Number(dayKey.slice(0, 4)),
-    m: Number(dayKey.slice(5, 7)),
-  }
-}
-
-function monthKey(y: number, m: number) {
-  return `${y}-${pad2(m)}-01`
-}
-
-function md(dayKey: string) {
-  return `${Number(dayKey.slice(5, 7))}/${Number(dayKey.slice(8, 10))}`
-}
-
-function ymd(dayKey: string) {
-  return `${Number(dayKey.slice(0, 4))}/${md(dayKey)}`
-}
-
-function weekdayShort(dayKey: string) {
-  return new Intl.DateTimeFormat('ja-JP', {
-    timeZone: 'Asia/Tokyo',
-    weekday: 'short',
-  }).format(new Date(dayStartMs(dayKey)))
-}
-
-/**
- * 日付キーへ n ヶ月加算。同日が無い月（例: 1/31 の1ヶ月後）は翌月1日へ繰り上げる
- */
-function addMonthsKey(dayKey: string, n: number): string {
-  const y = Number(dayKey.slice(0, 4))
-  const m = Number(dayKey.slice(5, 7))
-  const d = Number(dayKey.slice(8, 10))
-  const total = m - 1 + n
-  let y2 = y + Math.floor(total / 12)
-  let m2 = (((total % 12) + 12) % 12) + 1
-  if (d > daysInMonth(y2, m2)) {
-    m2 += 1
-    if (m2 > 12) {
-      m2 = 1
-      y2 += 1
-    }
-    return `${y2}-${pad2(m2)}-01`
-  }
-  return `${y2}-${pad2(m2)}-${pad2(d)}`
-}
 
 function makeDefaultPrefs(now = new Date()): LogPrefs {
   const t = todayKey(now)
@@ -233,7 +191,7 @@ function buildApplied(prefs: LogPrefs, nowMs: number, events: Event[]): AppliedR
       kind,
       start,
       end: start + DAY_MS,
-      label: `${md(prefs.day)}（${weekdayShort(prefs.day)}）`,
+      label: `${formatMd(prefs.day)}（${weekdayShort(prefs.day)}）`,
     }
   }
   if (kind === 'week') {
@@ -243,7 +201,7 @@ function buildApplied(prefs: LogPrefs, nowMs: number, events: Event[]): AppliedR
       kind,
       start,
       end: start + 7 * DAY_MS,
-      label: `${md(prefs.weekStart)}（${weekdayShort(prefs.weekStart)}）〜 ${md(endKey)}（${weekdayShort(endKey)}）`,
+      label: `${formatMd(prefs.weekStart)}（${weekdayShort(prefs.weekStart)}）〜 ${formatMd(endKey)}（${weekdayShort(endKey)}）`,
     }
   }
   if (kind === 'month') {
@@ -259,7 +217,7 @@ function buildApplied(prefs: LogPrefs, nowMs: number, events: Event[]): AppliedR
       end: dayStartMs(endKeyEx),
       label: isFirst
         ? `${y}年${m}月`
-        : `${md(prefs.monthStart)}（${weekdayShort(prefs.monthStart)}）〜 ${md(lastKey)}（${weekdayShort(lastKey)}）`,
+        : `${formatMd(prefs.monthStart)}（${weekdayShort(prefs.monthStart)}）〜 ${formatMd(lastKey)}（${weekdayShort(lastKey)}）`,
     }
   }
   if (kind === 'year') {
@@ -287,8 +245,8 @@ function buildApplied(prefs: LogPrefs, nowMs: number, events: Event[]): AppliedR
     start: dayStartMs(lo),
     end: dayStartMs(hi) + DAY_MS,
     label: applied
-      ? `${md(lo)}（${weekdayShort(lo)}）〜 ${md(hi)}（${weekdayShort(hi)}）`
-      : `${md(lo)}（${weekdayShort(lo)}）`,
+      ? `${formatMd(lo)}（${weekdayShort(lo)}）〜 ${formatMd(hi)}（${weekdayShort(hi)}）`
+      : `${formatMd(lo)}（${weekdayShort(lo)}）`,
   }
 }
 
@@ -443,25 +401,6 @@ function MonthCalendar({
       </div>
     </div>
   )
-}
-
-/** チップ表示中、グラフ外をタップしたら閉じる（出っ放し防止） */
-function useOutsideClose(
-  ref: { current: HTMLElement | null },
-  active: boolean,
-  onClose: () => void,
-) {
-  useEffect(() => {
-    if (!active) return
-    const onDown = (e: PointerEvent) => {
-      const t = e.target
-      if (ref.current && t instanceof Node && !ref.current.contains(t)) {
-        onClose()
-      }
-    }
-    document.addEventListener('pointerdown', onDown)
-    return () => document.removeEventListener('pointerdown', onDown)
-  }, [ref, active, onClose])
 }
 
 /** タップで出すタスク名チップ（スマホはホバーがないため） */
@@ -876,7 +815,6 @@ export function LogScreen() {
   const [draft, setDraft] = useState<LogPrefs>(() => makeDefaultPrefs())
   const [customTarget, setCustomTarget] = useState<'start' | 'end'>('start')
   const [viewYm, setViewYm] = useState(() => ymParts(today))
-  const [now, setNow] = useState(() => Date.now())
   const [editId, setEditId] = useState<string | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   // Summary グラフの表示モード（Tasks = タスクの時系列 / Genres = ジャンル合算）
@@ -923,11 +861,7 @@ export function LogScreen() {
   }, [loading, logPrefs])
 
   const hasLive = useMemo(() => events.some((e) => e.endedAt === null), [events])
-  useEffect(() => {
-    if (!hasLive) return
-    const id = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(id)
-  }, [hasLive])
+  const now = useNowTick(hasLive)
 
   const applied = useMemo(
     () => buildApplied(prefs, now, events),
@@ -1516,7 +1450,7 @@ export function LogScreen() {
                     setViewYm(ymParts(draft.customStart))
                   }}
                 >
-                  開始 {ymd(draft.customStart)}（{weekdayShort(draft.customStart)}）
+                  開始 {formatYmd(draft.customStart)}（{weekdayShort(draft.customStart)}）
                 </button>
                 <button
                   type="button"
@@ -1530,7 +1464,7 @@ export function LogScreen() {
                     setViewYm(ymParts(draft.customEnd))
                   }}
                 >
-                  終了 {ymd(draft.customEnd)}（{weekdayShort(draft.customEnd)}）
+                  終了 {formatYmd(draft.customEnd)}（{weekdayShort(draft.customEnd)}）
                 </button>
               </div>
             )}

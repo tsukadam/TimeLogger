@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
+import { useOutsideClose } from '../lib/useOutsideClose'
 import type { Task } from '../types'
 import styles from './FolderSelect.module.css'
 
@@ -27,14 +28,7 @@ export function TaskSelect({
     tasks[0] ??
     null
 
-  useEffect(() => {
-    if (!open) return
-    const onDoc = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [open])
+  useOutsideClose(rootRef, open, () => setOpen(false))
 
   const options =
     extraOption && !tasks.some((t) => t.id === extraOption.id)
