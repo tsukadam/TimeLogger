@@ -79,6 +79,10 @@ const FUTURE_GRACE_MS = 60000
 /**
  * 既存記録との時間重複を探す。記録中（endedAt null）は現在時刻まで
  * 占有しているとみなす。端点の一致（10:00終了と10:00開始）は重複としない。
+ *
+ * 判定は秒精度（切り捨て）。リアルタイム記録はミリ秒付きで保存されるが、
+ * 表示は秒までで編集入力も整数秒のため、表示上「同じ秒」に合わせた編集が
+ * 見えない端数のせいで弾かれないようにする。
  */
 function findOverlap(
   events: Event[],
@@ -87,11 +91,14 @@ function findOverlap(
   excludeId: string | null,
   nowMs: number,
 ): Event | null {
+  const floorSec = (ms: number) => Math.floor(ms / 1000)
+  const startSec = floorSec(startMs)
+  const endSec = floorSec(endMs)
   for (const ev of events) {
     if (excludeId !== null && ev.id === excludeId) continue
-    const s = new Date(ev.startedAt).getTime()
-    const e = ev.endedAt ? new Date(ev.endedAt).getTime() : nowMs
-    if (startMs < e && s < endMs) return ev
+    const s = floorSec(new Date(ev.startedAt).getTime())
+    const e = floorSec(ev.endedAt ? new Date(ev.endedAt).getTime() : nowMs)
+    if (startSec < e && s < endSec) return ev
   }
   return null
 }
