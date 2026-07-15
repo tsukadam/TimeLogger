@@ -18,19 +18,19 @@
 
 参照ゼロのものを消すだけ。挙動に影響なし。
 
-- [ ] `src/lib/color.ts` — `DEFAULT_PALETTE`（未使用エクスポート）
-- [ ] `src/types.ts` — `WriteResult` / `ApiError` 型（未使用。`client.ts:88` のインライン型を `WriteResult` に置き換えて型の方を活かす）
-- [ ] `src/components/EventEditModal.tsx` 末尾 — `export type { Event }`（再エクスポート、参照なし）
-- [ ] `src/components/TimeField.tsx` — `panelRef`（付けているが読んでいない）
-- [ ] `src/components/DateField.tsx` — `rootRef`（同上）
-- [ ] `src/screens/LogScreen.tsx:1535` 付近 — `styles.monthPick`（**CSS に定義が存在しない**クラス参照。削除するか、意図があったなら定義を足す。要確認）
-- [ ] 未使用 CSS クラスの削除:
+- [x] `src/lib/color.ts` — `DEFAULT_PALETTE`（未使用エクスポート）
+- [x] `src/types.ts` — `WriteResult` / `ApiError` 型（`client.ts` のインライン型を `WriteResult | ApiError` に置き換えて型の方を活かした）
+- [x] `src/components/EventEditModal.tsx` 末尾 — `export type { Event }`（再エクスポート、参照なし）
+- [x] `src/components/TimeField.tsx` — `panelRef`（付けているが読んでいない）
+- [x] `src/components/DateField.tsx` — `rootRef`（同上）
+- [x] `src/screens/LogScreen.tsx` — `styles.monthPick`（定義なしクラス参照 → className を外した。見た目変化なし）
+- [x] 未使用 CSS クラスの削除:
   - `.ghost`（LogScreen / ActivityScreen / TasksScreen / EventEditModal の4ファイル全部で未使用）
   - `.liveRow` 系（ActivityScreen.module.css）
   - `.sheetTitle`（LogScreen.module.css のみ未使用）
   - `.field select`（ActivityScreen.module.css。ネイティブ select はもう無い）
-- [ ] `vite.config.ts` — `@` エイリアス（`@/` import は 0 件。使わないなら削除、今後使うなら残す。**削除でよいか要確認**）
-- [ ] `Store.tsx` — `reload`（Context に公開しているが消費者なし。将来の手動リロード用に残すか要確認）
+- [x] `vite.config.ts` — `@` エイリアス（`@/` import 0 件のため削除。必要になったら復活は容易）
+- [ ] `Store.tsx` — `reload`（Context に公開しているが消費者なし。将来の手動リロード用に**残した**。消すなら要指示）
 
 済:
 - [x] `TasksScreen.tsx` の body overflow 直接操作 useEffect（`useScrollLock` と機能重複）→ 削除済み
@@ -39,14 +39,13 @@
 
 コピペされた純関数を `lib/` に一本化する。
 
-- [ ] `pad2`（ゼロ埋め）が 7 箇所に再定義 → `lib/time.ts` に 1 つだけ export し、全員それを使う
-  - LogScreen.tsx / DateField.tsx / TimeWheel.tsx / time.ts 内の `pad` ×3 / scripts はそのまま（一回きりのスクリプトなので対象外）
-- [ ] LogScreen.tsx 冒頭の日付ユーティリティ群（`ymParts` / `monthKey` / `md` / `ymd` / `weekdayShort` / `addMonthsKey`）→ `lib/time.ts` へ移動。`md`/`ymd` はもう少し説明的な名前に（例: `formatMd` / `formatYmd`）
-- [ ] 1日の長さ定数の分散（`DAY_MS` / `DAY_SEC` / リテラル `86400000` ×3 / `24*60*60*1000`）→ `lib/time.ts` に `DAY_MS` / `DAY_SEC` を定義して共用
-- [ ] `time.ts` 内部の整理: `isoToDateInput` は `dateKey` の別名（どちらかに寄せる）、`overlapSecondsOnDay` が `dayStartMs` を使わず同じ式を再記述している箇所
-- [ ] 「外側クリックで閉じる」3実装（FolderSelect / TaskSelect / LogScreen の `useOutsideClose`）→ `lib/useOutsideClose.ts` に統一（mousedown / pointerdown の差は pointerdown に揃える）
-- [ ] 「Escape で閉じる」2実装（DateField / TimeField）→ 上記フックに含めるか `useEscapeClose` として共通化
-- [ ] 1秒 tick の useEffect 3実装 → `lib/useNowTick.ts`（ActivityScreen だけ 250ms なのは意図か要確認。意図がなければ 1000ms に統一）
+- [x] `pad2`（ゼロ埋め）→ `lib/time.ts` に 1 つだけ export し、全員それを使う（scripts は対象外のまま）
+- [x] LogScreen.tsx 冒頭の日付ユーティリティ群 → `lib/time.ts` へ移動。`md`/`ymd` は `formatMd` / `formatYmd` に改名
+- [x] 1日の長さ定数 → `lib/time.ts` の `DAY_MS` / `DAY_SEC` に共用化
+- [x] `time.ts` 内部の整理: `isoToDateInput` を廃止して `dateKey` に一本化、`overlapSecondsOnDay` は `dayStartMs` を使用
+- [x] 「外側クリックで閉じる」3実装 → `lib/useOutsideClose.ts` に統一（pointerdown に揃えた）
+- [x] 「Escape で閉じる」2実装 → 同ファイルの `useEscapeClose` に共通化
+- [x] 1秒 tick の useEffect 3実装 → `lib/useNowTick.ts`（ActivityScreen の 250ms は挙動維持のためそのまま。1000ms に統一するなら要指示）
 
 ## Phase 3: モーダルの共通化（リスク: 中）
 
