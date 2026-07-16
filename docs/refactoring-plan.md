@@ -73,9 +73,9 @@
 
 **最大のロジック重複。** EventEditModal は「Activity / Log 共通」とコメントされているが、実際は Log だけが使い、Activity は同じフォーム（state 7個・changeFolder・submit・削除・削除済みタスク表示まで）を丸ごと再実装している。
 
-- [ ] EventEditModal を「追加」モードにも対応させる（`eventId` の代わりに `mode: 'add' | 'edit'` 相当）
-- [ ] ActivityScreen の追加・編集シートを EventEditModal 呼び出しに置き換え、重複フォームを削除（約 250 行減る見込み）
-- [ ] Activity 固有の差分（追加時の初期値ロジックなど）は props で注入
+- [x] EventEditModal を「追加」モードにも対応させる（`eventId` の代わりに `mode: 'add' | 'edit'` 相当）
+- [x] ActivityScreen の追加・編集シートを EventEditModal 呼び出しに置き換え、重複フォームを削除（約 250 行減る見込み）
+- [x] Activity 固有の差分（追加時の初期値ロジックなど）は props で注入
 
 ## Phase 6: LogScreen の分割（リスク: 中）
 

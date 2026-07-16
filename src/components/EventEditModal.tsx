@@ -16,8 +16,40 @@ import {
 import { useStore } from '../state/Store'
 import type { Event, Task } from '../types'
 
-/** Activity / Log 共通の記録編集モーダル */
-export function EventEditModal({
+/** Activity の追加モード用。openAdd が計算して渡す */
+export type EventFormSeed = {
+  folderId: string
+  taskId: string
+  startDate: string
+  startTime: string
+  endDate: string
+  endTime: string
+}
+
+export type EventEditModalProps =
+  | { mode?: 'edit'; eventId: string; onClose: () => void }
+  | { mode: 'add'; initial: EventFormSeed; onClose: () => void }
+
+/** Activity / Log 共通の記録追加・編集モーダル */
+export function EventEditModal(props: EventEditModalProps) {
+  if (props.mode === 'add') {
+    return (
+      <Modal open onClose={props.onClose} aria-label="記録を追加">
+        {({ requestClose }) => (
+          <EventEditForm
+            mode="add"
+            initial={props.initial}
+            requestClose={requestClose}
+          />
+        )}
+      </Modal>
+    )
+  }
+
+  return <EventEditModalEdit eventId={props.eventId} onClose={props.onClose} />
+}
+
+function EventEditModalEdit({
   eventId,
   onClose,
 }: {
@@ -45,6 +77,7 @@ export function EventEditModal({
       {({ requestClose }) =>
         editing ? (
           <EventEditForm
+            mode="edit"
             eventId={eventId}
             editing={editing}
             tasks={tasks}
@@ -56,56 +89,87 @@ export function EventEditModal({
   )
 }
 
-function EventEditForm({
-  eventId,
-  editing,
-  tasks,
-  requestClose,
-}: {
-  eventId: string
-  editing: Event
-  tasks: Task[]
-  requestClose: () => void
-}) {
-  const { busy, folders, updateEvent, deleteEvent } = useStore()
+type EventEditFormProps =
+  | {
+      mode: 'edit'
+      eventId: string
+      editing: Event
+      tasks: Task[]
+      requestClose: () => void
+    }
+  | {
+      mode: 'add'
+      initial: EventFormSeed
+      requestClose: () => void
+    }
 
-  const [formFolderId, setFormFolderId] = useState('')
-  const [formTaskId, setFormTaskId] = useState('')
-  const [formStartDate, setFormStartDate] = useState('')
-  const [formStartTime, setFormStartTime] = useState('')
-  const [formEndDate, setFormEndDate] = useState('')
-  const [formEndTime, setFormEndTime] = useState('')
+function EventEditForm(props: EventEditFormProps) {
+  const { busy, folders, tasks, updateEvent, addEvent, deleteEvent } =
+    useStore()
+  const isAdd = props.mode === 'add'
+  const editing = props.mode === 'edit' ? props.editing : null
+  const eventId = props.mode === 'edit' ? props.eventId : null
+  const formTasks = props.mode === 'edit' ? props.tasks : tasks
+  const { requestClose } = props
+
+  const [formFolderId, setFormFolderId] = useState(() =>
+    isAdd ? props.initial.folderId : '',
+  )
+  const [formTaskId, setFormTaskId] = useState(() =>
+    isAdd ? props.initial.taskId : '',
+  )
+  const [formStartDate, setFormStartDate] = useState(() =>
+    isAdd ? props.initial.startDate : '',
+  )
+  const [formStartTime, setFormStartTime] = useState(() =>
+    isAdd ? props.initial.startTime : '',
+  )
+  const [formEndDate, setFormEndDate] = useState(() =>
+    isAdd ? props.initial.endDate : '',
+  )
+  const [formEndTime, setFormEndTime] = useState(() =>
+    isAdd ? props.initial.endTime : '',
+  )
   const [formError, setFormError] = useState<string | null>(null)
   const [pendingSheet, setPendingSheet] = useState<'save' | 'delete' | null>(
     null,
   )
 
   useEffect(() => {
-    const task = tasks.find((t) => t.id === editing.taskId)
-    setFormFolderId(task?.folderId ?? editing.folderId)
-    setFormTaskId(editing.taskId)
-    setFormStartDate(dateKey(editing.startedAt))
-    setFormStartTime(isoToTimeInput(editing.startedAt))
-    setFormEndDate(editing.endedAt ? dateKey(editing.endedAt) : '')
-    setFormEndTime(editing.endedAt ? isoToTimeInput(editing.endedAt) : '')
+    if (props.mode !== 'edit') return
+    const ev = props.editing
+    const taskList = props.tasks
+    const task = taskList.find((t) => t.id === ev.taskId)
+    setFormFolderId(task?.folderId ?? ev.folderId)
+    setFormTaskId(ev.taskId)
+    setFormStartDate(dateKey(ev.startedAt))
+    setFormStartTime(isoToTimeInput(ev.startedAt))
+    setFormEndDate(ev.endedAt ? dateKey(ev.endedAt) : '')
+    setFormEndTime(ev.endedAt ? isoToTimeInput(ev.endedAt) : '')
     setFormError(null)
-  }, [editing, tasks])
+  }, [
+    props.mode,
+    props.mode === 'edit' ? props.editing : null,
+    props.mode === 'edit' ? props.tasks : null,
+  ])
 
   const folderTasks = useMemo(
     () =>
-      tasks
+      formTasks
         .filter((t) => t.folderId === formFolderId)
         .sort((a, b) => a.sortOrder - b.sortOrder),
-    [tasks, formFolderId],
+    [formTasks, formFolderId],
   )
 
-  const isRecording = editing.endedAt === null
+  const isRecording = !isAdd && editing!.endedAt === null
   const taskMissing =
-    formTaskId !== '' && !folderTasks.some((t) => t.id === formTaskId)
+    !isAdd &&
+    formTaskId !== '' &&
+    !folderTasks.some((t) => t.id === formTaskId)
 
   const changeFolder = (folderId: string) => {
     setFormFolderId(folderId)
-    const first = tasks
+    const first = formTasks
       .filter((t) => t.folderId === folderId)
       .sort((a, b) => a.sortOrder - b.sortOrder)[0]
     setFormTaskId(first?.id ?? '')
@@ -116,15 +180,23 @@ function EventEditForm({
     setPendingSheet('save')
     try {
       const startedAt = dateTimeInputToIso(formStartDate, formStartTime)
-      const endedAt =
-        editing.endedAt === null
-          ? null
-          : dateTimeInputToIso(formEndDate, formEndTime)
-      await updateEvent(eventId, {
-        taskId: formTaskId,
-        startedAt,
-        endedAt,
-      })
+      if (isAdd) {
+        await addEvent({
+          taskId: formTaskId,
+          startedAt,
+          endedAt: dateTimeInputToIso(formEndDate, formEndTime),
+        })
+      } else {
+        const endedAt =
+          editing!.endedAt === null
+            ? null
+            : dateTimeInputToIso(formEndDate, formEndTime)
+        await updateEvent(eventId!, {
+          taskId: formTaskId,
+          startedAt,
+          endedAt,
+        })
+      }
       requestClose()
     } catch (e) {
       setFormError(e instanceof Error ? e.message : '保存に失敗しました')
@@ -134,6 +206,7 @@ function EventEditForm({
   }
 
   const submitDelete = async () => {
+    if (isAdd || !eventId) return
     if (!window.confirm('この記録を削除しますか？')) return
     setFormError(null)
     setPendingSheet('delete')
@@ -147,9 +220,12 @@ function EventEditForm({
     }
   }
 
+  const title = isAdd ? '記録を追加' : '記録を編集'
+  const endRequired = !isRecording
+
   return (
     <>
-      <h2 className={form.sheetTitle}>記録を編集</h2>
+      <h2 className={form.sheetTitle}>{title}</h2>
 
       <div className={form.field}>
         <span>フォルダ</span>
@@ -169,7 +245,7 @@ function EventEditForm({
           disabled={busy}
           onChange={setFormTaskId}
           extraOption={
-            taskMissing
+            taskMissing && editing
               ? {
                   id: formTaskId,
                   name: `${editing.taskName}（削除済み）`,
@@ -201,7 +277,7 @@ function EventEditForm({
         </div>
       </div>
 
-      {!isRecording && (
+      {endRequired && (
         <div className={form.field}>
           <span>終了</span>
           <div className={form.dateTimeRow}>
@@ -227,17 +303,19 @@ function EventEditForm({
       {formError && <p className={form.formError}>{formError}</p>}
 
       <div className={form.sheetActions}>
-        <button
-          type="button"
-          className={`${form.danger}${
-            pendingSheet === 'delete' ? ` ${spinnerStyles.busyBtn}` : ''
-          }`}
-          disabled={busy}
-          aria-busy={pendingSheet === 'delete'}
-          onClick={() => void submitDelete()}
-        >
-          {pendingSheet === 'delete' ? <Spinner size={14} /> : '削除'}
-        </button>
+        {!isAdd && (
+          <button
+            type="button"
+            className={`${form.danger}${
+              pendingSheet === 'delete' ? ` ${spinnerStyles.busyBtn}` : ''
+            }`}
+            disabled={busy}
+            aria-busy={pendingSheet === 'delete'}
+            onClick={() => void submitDelete()}
+          >
+            {pendingSheet === 'delete' ? <Spinner size={14} /> : '削除'}
+          </button>
+        )}
         <div className={form.sheetActionsRight}>
           <button
             type="button"
@@ -249,12 +327,18 @@ function EventEditForm({
               !formTaskId ||
               !formStartDate ||
               !formStartTime.trim() ||
-              (!isRecording && (!formEndDate || !formEndTime.trim()))
+              (endRequired && (!formEndDate || !formEndTime.trim()))
             }
             aria-busy={pendingSheet === 'save'}
             onClick={() => void submit()}
           >
-            {pendingSheet === 'save' ? <Spinner size={14} /> : 'Save'}
+            {pendingSheet === 'save' ? (
+              <Spinner size={14} />
+            ) : isAdd ? (
+              'Add'
+            ) : (
+              'Save'
+            )}
           </button>
         </div>
       </div>
