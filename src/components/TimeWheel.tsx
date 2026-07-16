@@ -5,8 +5,11 @@ import styles from './TimeWheel.module.css'
 const ITEM = 32
 const HEIGHT = 160
 const CENTER = HEIGHT / 2 - ITEM / 2
-// 慣性: 離した速度 × この時間ぶんだけ滑走する（大きいほどよく回る）
-const GLIDE_MS = 280
+// 慣性: 離した瞬間の速度に掛ける滑走時間（速いフリックほどよく回る）
+const GLIDE_MS = 320
+// これ未満の速度（items/ms）では慣性なし＝最寄りへ穏やかにスナップ
+const VEL_INERTIA_MIN = 0.0018
+const MAX_GLIDE_ITEMS = 14
 
 function parseTime(value: string): [number, number, number] {
   const m = value.trim().match(/^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$/)
@@ -31,7 +34,7 @@ function nearestCongruent(from: number, target: number, mod: number) {
 /**
  * 1桁ぶんのドラムロール（ポインター駆動・慣性つき・無限軌道）
  * - 回すと桁上げ/下げが総秒（さらには日付）へ伝播する
- * - 回転中も常に最寄り値を onCommit で親へ伝える（途中で閉じても確定できる）
+ * - ドラッグ中は見た目だけ動かし、離したときに確定・慣性
  */
 function WheelColumn({
   label,
@@ -80,6 +83,12 @@ function WheelColumn({
     }
   }
 
+  /** ドラッグ中は見た目だけ動かし、確定（親への commit）は離してから */
+  const setVisualPos = (p: number) => {
+    setPos(p)
+    posRef.current = p
+  }
+
   /** commit: 移動中も最寄り値を親へ流し込むか */
   const animateTo = (target: number, ms: number, commit: boolean) => {
     stopAnim()
@@ -87,8 +96,7 @@ function WheelColumn({
     if (Math.abs(target - from) < 0.001) {
       if (commit) applyPos(target)
       else {
-        setPos(target)
-        posRef.current = target
+        setVisualPos(target)
       }
       return
     }
@@ -97,10 +105,7 @@ function WheelColumn({
       const k = Math.min(1, (t - t0) / ms)
       const p = from + (target - from) * easeOutCubic(k)
       if (commit) applyPos(p)
-      else {
-        setPos(p)
-        posRef.current = p
-      }
+      else setVisualPos(p)
       if (k < 1) rafRef.current = requestAnimationFrame(step)
       else rafRef.current = null
     }
@@ -157,12 +162,13 @@ function WheelColumn({
 
     const move = (ev: PointerEvent) => {
       if (Math.abs(ev.clientY - startY) > 4) movedRef.current = true
+      // 指が付いている間は 1:1。慣性も中間コミットもしない
       const p = startPos + (startY - ev.clientY) / ITEM
-      applyPos(p)
+      setVisualPos(p)
       const now = performance.now()
       const arr = samplesRef.current
       arr.push({ t: now, p })
-      while (arr.length > 2 && now - arr[0]!.t > 100) arr.shift()
+      while (arr.length > 2 && now - arr[0]!.t > 80) arr.shift()
     }
     const up = () => {
       window.removeEventListener('pointermove', move)
@@ -182,10 +188,21 @@ function WheelColumn({
       ) {
         vel = (last.p - first.p) / (last.t - first.t) // items/ms
       }
-      // 慣性の行き先を速度から見積もり、最寄り項目へスナップ
-      const dest = Math.round(posRef.current + vel * GLIDE_MS)
+      // 遅い・穏やかな操作は最寄りへスナップのみ。速いフリックだけ慣性
+      let dest: number
+      if (Math.abs(vel) < VEL_INERTIA_MIN) {
+        dest = Math.round(posRef.current)
+      } else {
+        const excess = Math.abs(vel) - VEL_INERTIA_MIN
+        const glide = Math.min(excess * GLIDE_MS, MAX_GLIDE_ITEMS) * Math.sign(vel)
+        dest = Math.round(posRef.current + glide)
+      }
       const dist = Math.abs(dest - posRef.current)
-      const ms = Math.max(180, Math.min(850, 160 + dist * 70))
+      // 短い距離は短く・長い滑走は長め（穏やかなスナップは軽快に）
+      const ms =
+        dist < 0.5
+          ? 140
+          : Math.max(180, Math.min(900, 140 + dist * 75))
       animateTo(dest, ms, true)
     }
     window.addEventListener('pointermove', move)
