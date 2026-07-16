@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { DAY_MS } from '../../lib/time'
 import { useOutsideClose } from '../../lib/useOutsideClose'
 import styles from '../LogScreen.module.css'
-import { ChartTip } from './ChartTip'
+import { StackBars, type StackBarCol } from './StackBars'
 import type { Column, Slice } from './types'
 
 export function IndividualChart({
@@ -87,69 +87,46 @@ export function IndividualChart({
     )
   }
 
-  const n = Math.max(columns.length, 1)
-  return (
-    <div className={styles.totalsWrap} ref={wrapRef}>
-      <div className={styles.stackChart}>
-        <div
-          className={styles.stackInner}
-          style={{
-            width: `${Math.min(100, n * 25)}%`,
-            gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))`,
-          }}
-        >
-          {columns.map((col) => {
-            const span = Math.max(1, col.end - col.start)
-            return (
-              <div key={col.key} className={styles.stackCol}>
-                <div className={styles.stackBar}>
-                  <div className={styles.fillStill}>
-                    {draw &&
-                      col.segs.map((s) => {
-                        const segKey = `${s.eventId}-${s.start}`
-                        return (
-                          <button
-                            key={segKey}
-                            type="button"
-                            className={styles.stackSeg}
-                            style={{
-                              bottom: `${((s.start - col.start) / span) * 100}%`,
-                              height: `${((s.end - s.start) / span) * 100}%`,
-                              background: s.color,
-                            }}
-                            onClick={() => {
-                              if (!tapName) {
-                                onSeg(s.eventId)
-                                return
-                              }
-                              const slice: Slice = {
-                                id: segKey,
-                                name: s.name,
-                                color: s.color,
-                                sec: Math.floor((s.end - s.start) / 1000),
-                              }
-                              setTip((cur) =>
-                                cur?.key === segKey
-                                  ? null
-                                  : { key: segKey, slice },
-                              )
-                            }}
-                          />
-                        )
-                      })}
-                  </div>
-                  {/* 完成形をマスクで隠し、下から上へ縮めて見せる */}
-                  {draw && <div className={styles.revealY} aria-hidden />}
-                </div>
-                <span className={styles.stackLabel}>{col.label}</span>
-              </div>
+  const stackCols: StackBarCol[] = columns.map((col) => {
+    const span = Math.max(1, col.end - col.start)
+    return {
+      key: col.key,
+      label: col.label,
+      segs: col.segs.map((s) => {
+        const segKey = `${s.eventId}-${s.start}`
+        return {
+          key: segKey,
+          bottomPct: ((s.start - col.start) / span) * 100,
+          heightPct: ((s.end - s.start) / span) * 100,
+          color: s.color,
+          variant: 'stack' as const,
+          onClick: () => {
+            if (!tapName) {
+              onSeg(s.eventId)
+              return
+            }
+            const slice: Slice = {
+              id: segKey,
+              name: s.name,
+              color: s.color,
+              sec: Math.floor((s.end - s.start) / 1000),
+            }
+            setTip((cur) =>
+              cur?.key === segKey ? null : { key: segKey, slice },
             )
-          })}
-        </div>
-      </div>
-      {tapName && (
-        <ChartTip tip={tip?.slice ?? null} onClose={() => setTip(null)} />
-      )}
-    </div>
+          },
+        }
+      }),
+    }
+  })
+
+  return (
+    <StackBars
+      columns={stackCols}
+      draw={draw}
+      tip={tapName ? (tip?.slice ?? null) : null}
+      onCloseTip={() => setTip(null)}
+      wrapRef={wrapRef}
+    />
   )
 }

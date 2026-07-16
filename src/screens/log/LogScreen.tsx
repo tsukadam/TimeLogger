@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { EventEditModal } from '../../components/EventEditModal'
 import { FolderIcon } from '../../components/FolderIcon'
+import chrome from '../../components/screenChrome.module.css'
 import {
   addDaysKey,
   addMonthsKey,
@@ -16,10 +17,10 @@ import { useStore } from '../../state/Store'
 import type { LogKind, LogPrefs } from '../../types'
 import styles from '../LogScreen.module.css'
 import { aggregateLogData, resolveDisplay } from './aggregate'
-import { Donut } from './Donut'
 import { IndividualChart } from './IndividualChart'
 import { buildApplied, makeDefaultPrefs, normalizePrefs } from './prefs'
 import { RangePicker, type SheetPos } from './RangePicker'
+import { SliceBreakdown } from './SliceBreakdown'
 import { TotalsChart } from './TotalsChart'
 
 export function LogScreen() {
@@ -115,7 +116,7 @@ export function LogScreen() {
     setDetailOpen(false)
   }
 
-  // ←→ の期間送り（Day: 1日 / Week: 7日 / Month: 1月 / Year: 1年）
+  // ←→ 期間送り
   const stepRange = (dir: 1 | -1) => {
     const k = prefs.kind
     if (k === 'day') {
@@ -161,18 +162,17 @@ export function LogScreen() {
     [applied, events, tasks, folders, now, sumMode],
   )
 
-  // 時系列/Tasks/Genres の切り替えを持つ期間種別
   const hasSumModes =
     prefs.kind === 'week' || prefs.kind === 'month' || prefs.kind === 'year'
 
   if (loading || !prefsReady) {
-    return <p className={styles.status}>Loading...</p>
+    return <p className={chrome.status}>Loading...</p>
   }
 
   return (
     <section className={styles.root}>
       {error && (
-        <div className={styles.error} role="alert">
+        <div className={chrome.error} role="alert">
           <span>{error}</span>
           <button type="button" onClick={clearError}>
             閉じる
@@ -259,9 +259,8 @@ export function LogScreen() {
           <h2 className={styles.sectionTitle}>Summary</h2>
           <div className={styles.panel}>
             {totalSec === 0 ? (
-              <p className={styles.status}>No Data</p>
+              <p className={chrome.status}>No Data</p>
             ) : hasSumModes && sumMode === 'genres' ? (
-              // key: 期間・モードが変わったら描き直す
               <TotalsChart
                 key={`${prefs.kind}-${applied.start}-${sumMode}`}
                 columns={totalColumns}
@@ -310,7 +309,7 @@ export function LogScreen() {
               {detailOpen && (
                 <ul className={styles.detailList}>
                   {dayEvents.length === 0 ? (
-                    <li className={styles.status}>記録なし</li>
+                    <li className={chrome.status}>記録なし</li>
                   ) : (
                     dayEvents.map((ev) => {
                       const d = resolveDisplay(ev, tasks, folders)
@@ -353,81 +352,25 @@ export function LogScreen() {
         </>
       )}
 
-      <h2 className={styles.sectionTitle}>Tasks</h2>
-      {totalSec === 0 ? (
-        <p className={styles.status}>No Data</p>
-      ) : (
-        <>
-          <div className={styles.pieCenter}>
-            <Donut
-              key={`${prefs.kind}-${applied.start}`}
-              slices={pieTaskSlices}
-              totalSec={totalSec}
-              draw={drawStage >= 2}
-            />
-          </div>
-          <table className={styles.table}>
-            <tbody>
-              {taskSlices.map((s) => (
-                <tr key={s.id}>
-                  <td className={styles.tdDot}>
-                    <span
-                      className={styles.dot}
-                      style={{ background: s.color }}
-                    />
-                  </td>
-                  <td className={styles.tdName}>{s.name}</td>
-                  <td className={styles.tdTime}>
-                    {formatDurationHms(s.sec)}
-                  </td>
-                  <td className={styles.tdPct}>
-                    {((s.sec / Math.max(totalSec, 1)) * 100).toFixed(1)}%
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </>
-      )}
+      <SliceBreakdown
+        title="Tasks"
+        tableSlices={taskSlices}
+        pieSlices={pieTaskSlices}
+        totalSec={totalSec}
+        draw={drawStage >= 2}
+        chartKey={`${prefs.kind}-${applied.start}`}
+      />
 
       <hr className={styles.rule} />
 
-      <h2 className={styles.sectionTitle}>Genres</h2>
-      {totalSec === 0 ? (
-        <p className={styles.status}>No Data</p>
-      ) : (
-        <>
-          <div className={styles.pieCenter}>
-            <Donut
-              key={`${prefs.kind}-${applied.start}`}
-              slices={pieFolderSlices}
-              totalSec={totalSec}
-              draw={drawStage >= 3}
-            />
-          </div>
-          <table className={styles.table}>
-            <tbody>
-              {folderSlices.map((s) => (
-                <tr key={s.id}>
-                  <td className={styles.tdDot}>
-                    <span
-                      className={styles.dot}
-                      style={{ background: s.color }}
-                    />
-                  </td>
-                  <td className={styles.tdName}>{s.name}</td>
-                  <td className={styles.tdTime}>
-                    {formatDurationHms(s.sec)}
-                  </td>
-                  <td className={styles.tdPct}>
-                    {((s.sec / Math.max(totalSec, 1)) * 100).toFixed(1)}%
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </>
-      )}
+      <SliceBreakdown
+        title="Genres"
+        tableSlices={folderSlices}
+        pieSlices={pieFolderSlices}
+        totalSec={totalSec}
+        draw={drawStage >= 3}
+        chartKey={`${prefs.kind}-${applied.start}`}
+      />
 
       {pickerOpen && prefs.kind !== 'all' && sheetPos && (
         <RangePicker

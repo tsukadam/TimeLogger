@@ -10,6 +10,7 @@ import {
 } from '../../lib/time'
 import { useScrollLock } from '../../lib/useScrollLock'
 import type { LogPrefs } from '../../types'
+import form from '../../components/form.module.css'
 import styles from '../LogScreen.module.css'
 
 const MONTH_NAMES = [
@@ -170,19 +171,16 @@ export function RangePicker({
             showYearNav
             maxYear={maxYear}
             onPickDay={(d) => {
-              // Day/Week/Month は選んだ時点で即適用（Apply 不要）
               if (draft.kind === 'day') {
                 setDraft({ ...draft, day: d })
                 setViewYm(ymParts(d))
                 onClose()
                 onPersist({ ...prefs, day: d })
               } else if (draft.kind === 'week') {
-                // クリックした日から7日間（何曜日始まりでも可）
                 setDraft({ ...draft, weekStart: d })
                 setViewYm(ymParts(d))
                 onPersist({ ...prefs, weekStart: d })
               } else if (draft.kind === 'month') {
-                // クリックした日から1ヶ月間
                 setDraft({ ...draft, monthStart: d })
                 setViewYm(ymParts(d))
                 onPersist({ ...prefs, monthStart: d })
@@ -251,7 +249,6 @@ export function RangePicker({
                     type="button"
                     className={ys.m === m ? styles.monthOn : styles.monthBtn}
                     onClick={() => {
-                      // 選んだ時点で即適用（閉じるのは画面外タップ）
                       const k = monthKey(ys.y, m)
                       setDraft({ ...draft, yearStart: k })
                       onPersist({ ...prefs, yearStart: k })
@@ -266,10 +263,10 @@ export function RangePicker({
         )}
 
         {draft.kind === 'custom' && (
-          <div className={styles.sheetActions}>
+          <div className={form.sheetActions}>
             <button
               type="button"
-              className={styles.primary}
+              className={form.primary}
               onClick={applyPicker}
             >
               Apply

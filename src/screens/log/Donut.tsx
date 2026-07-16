@@ -71,21 +71,17 @@ export function Donut({
     const sin = Math.sin(midRad)
     const onRight = cos >= 0
     const dir = onRight ? 1 : -1
-    // 放射部: パイ外縁の少し外（パディング分）から外周Bまで
     const px = CX + cos * LEADER_START_R
     const py = CY + sin * LEADER_START_R
     const bx = CX + cos * BASE_R
     const by = CY + sin * BASE_R
-    // 水平部: LR_ADJUST からラベル余白を引いた長さ
     const hx = bx + dir * (LR_ADJUST - LABEL_PAD)
-    // ラベルは外周R/L（外周Bを左右にずらした円）上
     const tx = bx + dir * LR_ADJUST
     callouts.push({
       id: s.id,
       name: s.name.length > 10 ? `${s.name.slice(0, 9)}…` : s.name,
       tx,
       ty: by,
-      // 右: 左寄せ（文字は外へ）／ 左: 右寄せ（文字は外へ）
       anchor: onRight ? 'start' : 'end',
       points: `${px},${py} ${bx},${by} ${hx},${by}`,
     })
@@ -130,7 +126,6 @@ export function Donut({
                   {
                     '--c': `${C}`,
                     '--target': `${frac * C}`,
-                    // 真上から時計回りに一周伸びていくスイープ
                     animationDelay: `${startFrac * SWEEP_MS}ms`,
                     animationDuration: `${Math.max(frac * SWEEP_MS, 1)}ms`,
                   } as CSSProperties

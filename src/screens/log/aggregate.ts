@@ -140,7 +140,7 @@ export function aggregateLogData(args: {
   let chartMode: 'day' | 'stack' = 'stack'
 
   if (k === 'all') {
-    // 個別グラフなし
+    // no summary columns
   } else if (k === 'day') {
     chartMode = 'day'
     columns = [
@@ -153,7 +153,6 @@ export function aggregateLogData(args: {
       },
     ]
   } else if (k === 'year') {
-    // 基準月から12ヶ月分
     const baseKey = dateKey(nowIso(new Date(start)))
     for (let i = 0; i < 12; i++) {
       const csKey = addMonthsKey(baseKey, i)

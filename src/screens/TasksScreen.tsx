@@ -5,6 +5,7 @@ import { Modal } from '../components/Modal'
 import { Spinner } from '../components/Spinner'
 import spinnerStyles from '../components/Spinner.module.css'
 import form from '../components/form.module.css'
+import chrome from '../components/screenChrome.module.css'
 import { FOLDER_PALETTE, TASK_BASE_CELL, findTaskColorPos, taskColorGrid } from '../lib/color'
 import {
   durationLabel,
@@ -387,13 +388,13 @@ export function TasksScreen() {
     tasks.some((t) => t.folderId === sheet.id)
 
   if (loading) {
-    return <p className={styles.status}>Loading...</p>
+    return <p className={chrome.status}>Loading...</p>
   }
 
   return (
     <section className={styles.root} ref={rootRef}>
       {error && (
-        <div className={styles.error} role="alert">
+        <div className={chrome.error} role="alert">
           <span>{error}</span>
           <button type="button" onClick={clearError}>
             閉じる
@@ -551,10 +552,10 @@ export function TasksScreen() {
         </div>
       )}
 
-      <div className={styles.addBar}>
+      <div className={chrome.addBar}>
         <button
           type="button"
-          className={styles.plus}
+          className={chrome.plus}
           aria-label="追加"
           disabled={busy}
           onClick={openAdd}

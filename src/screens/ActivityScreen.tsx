@@ -4,6 +4,7 @@ import {
   type EventFormSeed,
 } from '../components/EventEditModal'
 import { FolderIcon } from '../components/FolderIcon'
+import chrome from '../components/screenChrome.module.css'
 import {
   dateKey,
   durationLabel,
@@ -188,13 +189,13 @@ export function ActivityScreen() {
   const closeSheet = () => setSheet({ type: 'closed' })
 
   if (loading) {
-    return <p className={styles.status}>Loading...</p>
+    return <p className={chrome.status}>Loading...</p>
   }
 
   return (
     <section className={styles.root}>
       {error && (
-        <div className={styles.error} role="alert">
+        <div className={chrome.error} role="alert">
           <span>{error}</span>
           <button type="button" onClick={clearError}>
             閉じる
@@ -203,7 +204,7 @@ export function ActivityScreen() {
       )}
 
       {events.length === 0 ? (
-        <p className={styles.status}>まだ記録がありません。</p>
+        <p className={chrome.status}>まだ記録がありません。</p>
       ) : (
         <>
           {groups.map((g) => (
@@ -263,10 +264,10 @@ export function ActivityScreen() {
         </>
       )}
 
-      <div className={styles.addBar}>
+      <div className={chrome.addBar}>
         <button
           type="button"
-          className={styles.plus}
+          className={chrome.plus}
           aria-label="記録を追加"
           disabled={busy || tasks.length === 0}
           onClick={openAdd}

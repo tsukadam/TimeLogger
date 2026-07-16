@@ -86,7 +86,6 @@ export function buildApplied(
     }
   }
   if (kind === 'month') {
-    // 基準日から1ヶ月間
     const start = dayStartMs(prefs.monthStart)
     const endKeyEx = addMonthsKey(prefs.monthStart, 1)
     const lastKey = addDaysKey(endKeyEx, -1)
@@ -102,7 +101,6 @@ export function buildApplied(
     }
   }
   if (kind === 'year') {
-    // 基準月から1年間
     const { y, m } = ymParts(prefs.yearStart)
     const lastYm = ymParts(addMonthsKey(prefs.yearStart, 11))
     return {

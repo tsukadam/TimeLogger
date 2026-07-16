@@ -8,32 +8,6 @@
   max-width: 100%;
 }
 
-.status {
-  margin: 0;
-  color: var(--muted);
-  text-align: center;
-  font-size: 0.88rem;
-}
-
-.error {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--danger) 18%, var(--panel));
-  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
-  color: #ffd4d4;
-}
-
-.error button {
-  border: none;
-  background: transparent;
-  color: inherit;
-  text-decoration: underline;
-}
-
 .kindTabs {
   position: relative;
   display: flex;
@@ -658,28 +632,5 @@
 
 .monthOn {
   border-color: var(--accent);
-  font-weight: 650;
-}
-
-.sheetActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  /* 決定ボタン行の上に余白 */
-  margin-top: 8px;
-}
-
-.primary {
-  border-radius: 8px;
-  padding: 8px 14px;
-  border: 1px solid var(--line);
-  background: var(--panel-2);
-  color: var(--fg);
-  font: inherit;
-}
-
-.primary {
-  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
-  color: var(--accent);
   font-weight: 650;
 }
