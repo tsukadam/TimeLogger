@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { DateField } from './DateField'
 import { FolderSelect } from './FolderSelect'
+import { Spinner } from './Spinner'
+import spinnerStyles from './Spinner.module.css'
 import { TaskSelect } from './TaskSelect'
 import { TimeField } from './TimeField'
 import {
@@ -44,6 +46,9 @@ export function EventEditModal({
   const [formEndTime, setFormEndTime] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [closing, setClosing] = useState(false)
+  const [pendingSheet, setPendingSheet] = useState<'save' | 'delete' | null>(
+    null,
+  )
   useScrollLock(true)
 
   // 閉じアニメーションを流してからアンマウント
@@ -93,6 +98,7 @@ export function EventEditModal({
 
   const submit = async () => {
     setFormError(null)
+    setPendingSheet('save')
     try {
       const startedAt = dateTimeInputToIso(formStartDate, formStartTime)
       const endedAt =
@@ -107,17 +113,22 @@ export function EventEditModal({
       close()
     } catch (e) {
       setFormError(e instanceof Error ? e.message : '保存に失敗しました')
+    } finally {
+      setPendingSheet(null)
     }
   }
 
   const submitDelete = async () => {
     if (!window.confirm('この記録を削除しますか？')) return
     setFormError(null)
+    setPendingSheet('delete')
     try {
       await deleteEvent(eventId)
       close()
     } catch (e) {
       setFormError(e instanceof Error ? e.message : '削除に失敗しました')
+    } finally {
+      setPendingSheet(null)
     }
   }
 
@@ -220,16 +231,21 @@ export function EventEditModal({
         <div className={styles.sheetActions}>
           <button
             type="button"
-            className={styles.danger}
+            className={`${styles.danger}${
+              pendingSheet === 'delete' ? ` ${spinnerStyles.busyBtn}` : ''
+            }`}
             disabled={busy}
+            aria-busy={pendingSheet === 'delete'}
             onClick={() => void submitDelete()}
           >
-            削除
+            {pendingSheet === 'delete' ? <Spinner size={14} /> : '削除'}
           </button>
           <div className={styles.sheetActionsRight}>
             <button
               type="button"
-              className={styles.primary}
+              className={`${styles.primary}${
+                pendingSheet === 'save' ? ` ${spinnerStyles.busyBtn}` : ''
+              }`}
               disabled={
                 busy ||
                 !formTaskId ||
@@ -237,9 +253,10 @@ export function EventEditModal({
                 !formStartTime.trim() ||
                 (!isRecording && (!formEndDate || !formEndTime.trim()))
               }
+              aria-busy={pendingSheet === 'save'}
               onClick={() => void submit()}
             >
-              Save
+              {pendingSheet === 'save' ? <Spinner size={14} /> : 'Save'}
             </button>
           </div>
         </div>

@@ -227,6 +227,15 @@
   transform: translate(-50%, -50%);
 }
 
+.recSpinner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  line-height: 0;
+}
+
 .elapsedInBtn {
   position: absolute;
   left: 50%;
@@ -593,6 +602,11 @@
   padding: 8px 14px;
   border: 1px solid var(--line);
   background: var(--panel-2);
+  min-width: 4.5em;
+  min-height: 2.4em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .primary {

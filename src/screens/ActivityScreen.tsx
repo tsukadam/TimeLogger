@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { DateField } from '../components/DateField'
 import { FolderIcon } from '../components/FolderIcon'
 import { FolderSelect } from '../components/FolderSelect'
+import { Spinner } from '../components/Spinner'
+import spinnerStyles from '../components/Spinner.module.css'
 import { TaskSelect } from '../components/TaskSelect'
 import { TimeField } from '../components/TimeField'
 import {
@@ -14,7 +17,6 @@ import {
   isoToTimeInput,
   nowIso,
 } from '../lib/time'
-import { DateField } from '../components/DateField'
 import { useNowTick } from '../lib/useNowTick'
 import { useScrollLock } from '../lib/useScrollLock'
 import { useStore } from '../state/Store'
@@ -122,6 +124,9 @@ export function ActivityScreen() {
   const [formEndDate, setFormEndDate] = useState('')
   const [formEndTime, setFormEndTime] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
+  const [pendingSheet, setPendingSheet] = useState<'save' | 'delete' | null>(
+    null,
+  )
   const sentinelRef = useRef<HTMLDivElement | null>(null)
   useScrollLock(sheet.type !== 'closed')
 
@@ -256,6 +261,7 @@ export function ActivityScreen() {
 
   const submitSheet = async () => {
     setFormError(null)
+    setPendingSheet('save')
     try {
       const startedAt = dateTimeInputToIso(formStartDate, formStartTime)
       if (sheet.type === 'edit') {
@@ -279,6 +285,8 @@ export function ActivityScreen() {
       closeSheet()
     } catch (e) {
       setFormError(e instanceof Error ? e.message : '保存に失敗しました')
+    } finally {
+      setPendingSheet(null)
     }
   }
 
@@ -286,11 +294,14 @@ export function ActivityScreen() {
     if (sheet.type !== 'edit') return
     if (!window.confirm('この記録を削除しますか？')) return
     setFormError(null)
+    setPendingSheet('delete')
     try {
       await deleteEvent(sheet.id)
       closeSheet()
     } catch (e) {
       setFormError(e instanceof Error ? e.message : '削除に失敗しました')
+    } finally {
+      setPendingSheet(null)
     }
   }
 
@@ -485,17 +496,22 @@ export function ActivityScreen() {
               {sheet.type === 'edit' && (
                 <button
                   type="button"
-                  className={styles.danger}
+                  className={`${styles.danger}${
+                    pendingSheet === 'delete' ? ` ${spinnerStyles.busyBtn}` : ''
+                  }`}
                   disabled={busy}
+                  aria-busy={pendingSheet === 'delete'}
                   onClick={() => void submitDelete()}
                 >
-                  削除
+                  {pendingSheet === 'delete' ? <Spinner size={14} /> : '削除'}
                 </button>
               )}
               <div className={styles.sheetActionsRight}>
                 <button
                   type="button"
-                  className={styles.primary}
+                  className={`${styles.primary}${
+                    pendingSheet === 'save' ? ` ${spinnerStyles.busyBtn}` : ''
+                  }`}
                   disabled={
                     busy ||
                     !formTaskId ||
@@ -504,9 +520,16 @@ export function ActivityScreen() {
                     (!(sheet.type === 'edit' && isRecording) &&
                       (!formEndDate || !formEndTime.trim()))
                   }
+                  aria-busy={pendingSheet === 'save'}
                   onClick={() => void submitSheet()}
                 >
-                  {sheet.type === 'add' ? 'Add' : 'Save'}
+                  {pendingSheet === 'save' ? (
+                    <Spinner size={14} />
+                  ) : sheet.type === 'add' ? (
+                    'Add'
+                  ) : (
+                    'Save'
+                  )}
                 </button>
               </div>
             </div>

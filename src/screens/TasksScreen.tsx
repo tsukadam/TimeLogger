@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { FolderIcon } from '../components/FolderIcon'
 import { FolderSelect } from '../components/FolderSelect'
+import { Spinner } from '../components/Spinner'
+import spinnerStyles from '../components/Spinner.module.css'
 import { FOLDER_PALETTE, TASK_BASE_CELL, findTaskColorPos, taskColorGrid } from '../lib/color'
 import {
   durationLabel,
@@ -103,6 +105,12 @@ export function TasksScreen() {
     kind: 'folder',
     index: 0,
   })
+  /** 録画開始/停止の通信中（押したタスクのボタンにスピナー） */
+  const [pendingRecId, setPendingRecId] = useState<string | null>(null)
+  /** シートの Save/Add / 削除の通信中 */
+  const [pendingSheet, setPendingSheet] = useState<'save' | 'delete' | null>(
+    null,
+  )
 
   const sheetOpen = sheet.type !== 'closed'
   const isEdit = sheet.type === 'edit-folder' || sheet.type === 'edit-task'
@@ -323,6 +331,7 @@ export function TasksScreen() {
   async function submitSheet() {
     const trimmed = name.trim()
     if (!trimmed) return
+    setPendingSheet('save')
     try {
       if (sheet.type === 'add') {
         if (addKind === 'folder') await addFolder(trimmed, color)
@@ -345,6 +354,8 @@ export function TasksScreen() {
       closeSheet()
     } catch {
       /* Store が表示 */
+    } finally {
+      setPendingSheet(null)
     }
   }
 
@@ -352,22 +363,28 @@ export function TasksScreen() {
     if (sheet.type === 'edit-folder') {
       if (tasks.some((t) => t.folderId === sheet.id)) return
       if (!window.confirm('このフォルダを削除しますか？')) return
+      setPendingSheet('delete')
       try {
         await deleteFolder(sheet.id)
         closeSheet()
       } catch {
         /* Store が表示 */
+      } finally {
+        setPendingSheet(null)
       }
       return
     }
     if (sheet.type === 'edit-task') {
       if (!window.confirm('このタスクを削除しますか？（過去の記録は残ります）'))
         return
+      setPendingSheet('delete')
       try {
         await deleteTask(sheet.id)
         closeSheet()
       } catch {
         /* Store が表示 */
+      } finally {
+        setPendingSheet(null)
       }
     }
   }
@@ -456,24 +473,47 @@ export function TasksScreen() {
             {folderTasks.map((task) => {
               const running = current?.taskId === task.id
               const todaySec = todaySecByTask.get(task.id) ?? 0
+              const recPending = pendingRecId === task.id
               return (
                 <li key={task.id} className={styles.taskRow} data-task-id={task.id}>
                   <button
                     type="button"
-                    className={running ? styles.recStop : styles.recStart}
+                    className={`${running ? styles.recStop : styles.recStart}${
+                      recPending ? ` ${spinnerStyles.busyBtn}` : ''
+                    }`}
                     disabled={busy}
                     aria-label={running ? '記録停止' : '記録開始'}
+                    aria-busy={recPending}
                     onClick={(e) => {
                       e.stopPropagation()
-                      if (running) void stopCurrent()
-                      else void startTask(task.id)
+                      void (async () => {
+                        setPendingRecId(task.id)
+                        try {
+                          if (running) await stopCurrent()
+                          else await startTask(task.id)
+                        } catch {
+                          /* Store が表示 */
+                        } finally {
+                          setPendingRecId(null)
+                        }
+                      })()
                     }}
                   >
-                    <span className={running ? styles.square : styles.triangle} />
-                    {running && current && (
-                      <span className={styles.elapsedInBtn}>
-                        {durationLabel(current.startedAt, null, now)}
+                    {recPending ? (
+                      <span className={styles.recSpinner}>
+                        <Spinner size={18} />
                       </span>
+                    ) : (
+                      <>
+                        <span
+                          className={running ? styles.square : styles.triangle}
+                        />
+                        {running && current && (
+                          <span className={styles.elapsedInBtn}>
+                            {durationLabel(current.startedAt, null, now)}
+                          </span>
+                        )}
+                      </>
                     )}
                   </button>
                   <button
@@ -711,8 +751,11 @@ export function TasksScreen() {
             {isEdit && (
               <button
                 type="button"
-                className={styles.danger}
+                className={`${styles.danger}${
+                  pendingSheet === 'delete' ? ` ${spinnerStyles.busyBtn}` : ''
+                }`}
                 disabled={busy || folderDeleteBlocked}
+                aria-busy={pendingSheet === 'delete'}
                 title={
                   folderDeleteBlocked
                     ? 'タスクがあるフォルダは削除できません'
@@ -720,17 +763,26 @@ export function TasksScreen() {
                 }
                 onClick={() => void submitDelete()}
               >
-                削除
+                {pendingSheet === 'delete' ? <Spinner size={14} /> : '削除'}
               </button>
             )}
             <div className={styles.sheetActionsRight}>
               <button
                 type="button"
-                className={styles.primary}
+                className={`${styles.primary}${
+                  pendingSheet === 'save' ? ` ${spinnerStyles.busyBtn}` : ''
+                }`}
                 disabled={busy || !name.trim() || (addKind === 'task' && !folderId)}
+                aria-busy={pendingSheet === 'save'}
                 onClick={() => void submitSheet()}
               >
-                {isEdit ? 'Save' : 'Add'}
+                {pendingSheet === 'save' ? (
+                  <Spinner size={14} />
+                ) : isEdit ? (
+                  'Save'
+                ) : (
+                  'Add'
+                )}
               </button>
             </div>
           </div>

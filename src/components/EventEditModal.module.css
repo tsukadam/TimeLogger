@@ -162,6 +162,11 @@
   background: var(--panel-2);
   color: var(--fg);
   font: inherit;
+  min-width: 4.5em;
+  min-height: 2.4em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .primary {
