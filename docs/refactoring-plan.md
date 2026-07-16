@@ -51,16 +51,16 @@
 
 同一の JSX 構造と CSS（keyframes 含む）が 4 箇所にコピーされている最大の CSS 重複。
 
-- [ ] `src/components/Modal.tsx` を新設:
+- [x] `src/components/Modal.tsx` を新設:
   - createPortal → modalRoot → backdrop（button, タップで閉じる）→ sheet（role="dialog"）の骨格
-  - 開閉アニメーション（backdropIn/Out, sheetIn/Out）と `closing` ステート管理（160ms setTimeout）を内包
+  - 開閉アニメーション（backdropIn/Out, sheetIn/Out）と `closing` ステート管理（`MODAL_CLOSE_MS = 160`）を内包
   - `useScrollLock` もここで一括適用
-  - props: `onClose`, `aria-label`, `children`, 必要なら `sheetClassName`
-- [ ] `Modal.module.css` に modalRoot / backdrop / sheet / keyframes を集約。各画面の CSS からコピー分を削除
-- [ ] 適用先: TasksScreen のシート、ActivityScreen のシート、EventEditModal、（LogScreen のピッカーは位置固定など特殊なので Phase 6 で判断）
-- [ ] 閉じアニメ時間 160ms が TS と CSS に二重定義 → CSS カスタムプロパティか共有定数に一本化
-- [ ] 共通フォーム系 CSS（`.field` / `.sheetActions` / `.primary` / `.danger` / `.formError` / `.dateTimeRow` / `.field input`）も Modal.module.css か `form.module.css` に集約
-- [ ] `.error` バナー / `.addBar`+`.plus` / `.status` / 丸スウォッチ（4定義）などの完全一致 CSS も共通モジュールへ
+  - props: `open`, `onClose`, `aria-label`, `children`（render prop で `requestClose`）, `wide?`
+- [x] `Modal.module.css` に modalRoot / backdrop / sheet / keyframes を集約。各画面の CSS からコピー分を削除
+- [x] 適用先: TasksScreen（wide=520px）、ActivityScreen、EventEditModal（LogScreen のピッカーは Phase 6）
+- [x] 閉じアニメ時間 160ms → `MODAL_CLOSE_MS` 定数に一本化（CSS は 0.16s のまま同期）
+- [x] 共通フォーム系 CSS → `form.module.css`（`.field` / `.sheetActions` / `.primary` / `.danger` / `.formError` / `.dateTimeRow` / `.sheetTitle`）
+- [ ] `.error` バナー / `.addBar`+`.plus` / `.status` / 丸スウォッチ（4定義）などの完全一致 CSS も共通モジュールへ（次のついでで可）
 
 ## Phase 4: カレンダーの一本化（リスク: 中）
 

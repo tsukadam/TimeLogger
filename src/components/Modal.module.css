@@ -1,0 +1,94 @@
+.modalRoot {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(12px + var(--safe-top)) 16px calc(12px + var(--safe-bottom));
+}
+
+.modalBackdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.58);
+  border: none;
+  padding: 0;
+  cursor: default;
+  touch-action: none;
+  animation: backdropIn 0.2s ease-out both;
+}
+
+.sheet {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(100%, 420px);
+  max-height: min(86dvh, 720px);
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  /* シート端でのスクロールを背後に連鎖させない */
+  overscroll-behavior: contain;
+  box-sizing: border-box;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  animation: sheetIn 0.18s ease-out both;
+}
+
+.sheetWide {
+  width: min(100%, 520px);
+}
+
+.modalClosing .modalBackdrop {
+  animation: backdropOut 0.16s ease-in both;
+}
+
+.modalClosing .sheet {
+  animation: sheetOut 0.16s ease-in both;
+}
+
+@keyframes backdropIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes backdropOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes sheetIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes sheetOut {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}

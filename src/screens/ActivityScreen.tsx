@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { DateField } from '../components/DateField'
 import { FolderIcon } from '../components/FolderIcon'
 import { FolderSelect } from '../components/FolderSelect'
+import { Modal } from '../components/Modal'
 import { Spinner } from '../components/Spinner'
 import spinnerStyles from '../components/Spinner.module.css'
 import { TaskSelect } from '../components/TaskSelect'
 import { TimeField } from '../components/TimeField'
+import form from '../components/form.module.css'
 import {
   addDaysKey,
   dateKey,
@@ -18,7 +19,6 @@ import {
   nowIso,
 } from '../lib/time'
 import { useNowTick } from '../lib/useNowTick'
-import { useScrollLock } from '../lib/useScrollLock'
 import { useStore } from '../state/Store'
 import type { Event } from '../types'
 import styles from './ActivityScreen.module.css'
@@ -116,7 +116,6 @@ export function ActivityScreen() {
   } = useStore()
   const [visible, setVisible] = useState(PAGE)
   const [sheet, setSheet] = useState<SheetState>({ type: 'closed' })
-  const [sheetClosing, setSheetClosing] = useState(false)
   const [formFolderId, setFormFolderId] = useState('')
   const [formTaskId, setFormTaskId] = useState('')
   const [formStartDate, setFormStartDate] = useState('')
@@ -127,8 +126,8 @@ export function ActivityScreen() {
   const [pendingSheet, setPendingSheet] = useState<'save' | 'delete' | null>(
     null,
   )
+  const requestCloseRef = useRef<() => void>(() => {})
   const sentinelRef = useRef<HTMLDivElement | null>(null)
-  useScrollLock(sheet.type !== 'closed')
 
   const hasLive = useMemo(() => events.some((e) => e.endedAt === null), [events])
   // 記録中カードの経過表示をなめらかにするため、この画面だけ 250ms 刻み
@@ -249,14 +248,8 @@ export function ActivityScreen() {
   }
 
   const closeSheet = () => {
-    // 閉じアニメーションを流してからアンマウント
-    if (sheetClosing) return
-    setSheetClosing(true)
-    window.setTimeout(() => {
-      setSheetClosing(false)
-      setSheet({ type: 'closed' })
-      setFormError(null)
-    }, 160)
+    setSheet({ type: 'closed' })
+    setFormError(null)
   }
 
   const submitSheet = async () => {
@@ -282,7 +275,7 @@ export function ActivityScreen() {
           endedAt: dateTimeInputToIso(formEndDate, formEndTime),
         })
       }
-      closeSheet()
+      requestCloseRef.current()
     } catch (e) {
       setFormError(e instanceof Error ? e.message : '保存に失敗しました')
     } finally {
@@ -297,7 +290,7 @@ export function ActivityScreen() {
     setPendingSheet('delete')
     try {
       await deleteEvent(sheet.id)
-      closeSheet()
+      requestCloseRef.current()
     } catch (e) {
       setFormError(e instanceof Error ? e.message : '削除に失敗しました')
     } finally {
@@ -392,151 +385,149 @@ export function ActivityScreen() {
         </button>
       </div>
 
-      {sheetOpen &&
-        createPortal(
-        <div
-          className={
-            sheetClosing
-              ? `${styles.modalRoot} ${styles.modalClosing}`
-              : styles.modalRoot
-          }
-        >
-          <button
-            type="button"
-            className={styles.modalBackdrop}
-            aria-label="閉じる"
-            onClick={closeSheet}
-          />
-          <div
-            className={styles.sheet}
-            role="dialog"
-            aria-modal="true"
-            aria-label={sheet.type === 'add' ? '記録を追加' : '記録を編集'}
-          >
-            <h2 className={styles.sheetTitle}>
-              {sheet.type === 'add' ? '記録を追加' : '記録を編集'}
-            </h2>
+      <Modal
+        open={sheetOpen}
+        onClose={closeSheet}
+        aria-label={sheet.type === 'add' ? '記録を追加' : '記録を編集'}
+      >
+        {({ requestClose }) => {
+          requestCloseRef.current = requestClose
+          return (
+            <>
+              <h2 className={form.sheetTitle}>
+                {sheet.type === 'add' ? '記録を追加' : '記録を編集'}
+              </h2>
 
-            <div className={styles.field}>
-              <span>フォルダ</span>
-              <FolderSelect
-                folders={folders}
-                value={formFolderId}
-                disabled={busy}
-                onChange={changeFolder}
-              />
-            </div>
-
-            <div className={styles.field}>
-              <span>タスク</span>
-              <TaskSelect
-                tasks={folderTasks}
-                value={formTaskId}
-                disabled={busy}
-                onChange={setFormTaskId}
-                extraOption={
-                  taskMissing && editing
-                    ? {
-                        id: formTaskId,
-                        name: `${editing.taskName}（削除済み）`,
-                        color: editing.taskColor,
-                      }
-                    : null
-                }
-              />
-            </div>
-
-            <div className={styles.field}>
-              <span>開始</span>
-              <div className={styles.dateTimeRow}>
-                <DateField
-                  value={formStartDate}
+              <div className={form.field}>
+                <span>フォルダ</span>
+                <FolderSelect
+                  folders={folders}
+                  value={formFolderId}
                   disabled={busy}
-                  onChange={setFormStartDate}
-                  aria-label="開始日"
-                />
-                <TimeField
-                  value={formStartTime}
-                  disabled={busy}
-                  onChange={setFormStartTime}
-                  onDayChange={(d) =>
-                    setFormStartDate((cur) => (cur ? addDaysKey(cur, d) : cur))
-                  }
-                  aria-label="開始時刻"
+                  onChange={changeFolder}
                 />
               </div>
-            </div>
 
-            {!(sheet.type === 'edit' && isRecording) && (
-              <div className={styles.field}>
-                <span>終了</span>
-                <div className={styles.dateTimeRow}>
+              <div className={form.field}>
+                <span>タスク</span>
+                <TaskSelect
+                  tasks={folderTasks}
+                  value={formTaskId}
+                  disabled={busy}
+                  onChange={setFormTaskId}
+                  extraOption={
+                    taskMissing && editing
+                      ? {
+                          id: formTaskId,
+                          name: `${editing.taskName}（削除済み）`,
+                          color: editing.taskColor,
+                        }
+                      : null
+                  }
+                />
+              </div>
+
+              <div className={form.field}>
+                <span>開始</span>
+                <div className={form.dateTimeRow}>
                   <DateField
-                    value={formEndDate}
+                    value={formStartDate}
                     disabled={busy}
-                    onChange={setFormEndDate}
-                    aria-label="終了日"
+                    onChange={setFormStartDate}
+                    aria-label="開始日"
                   />
                   <TimeField
-                    value={formEndTime}
+                    value={formStartTime}
                     disabled={busy}
-                    onChange={setFormEndTime}
+                    onChange={setFormStartTime}
                     onDayChange={(d) =>
-                      setFormEndDate((cur) => (cur ? addDaysKey(cur, d) : cur))
+                      setFormStartDate((cur) =>
+                        cur ? addDaysKey(cur, d) : cur,
+                      )
                     }
-                    aria-label="終了時刻"
+                    aria-label="開始時刻"
                   />
                 </div>
               </div>
-            )}
 
-            {formError && <p className={styles.formError}>{formError}</p>}
-
-            <div className={styles.sheetActions}>
-              {sheet.type === 'edit' && (
-                <button
-                  type="button"
-                  className={`${styles.danger}${
-                    pendingSheet === 'delete' ? ` ${spinnerStyles.busyBtn}` : ''
-                  }`}
-                  disabled={busy}
-                  aria-busy={pendingSheet === 'delete'}
-                  onClick={() => void submitDelete()}
-                >
-                  {pendingSheet === 'delete' ? <Spinner size={14} /> : '削除'}
-                </button>
+              {!(sheet.type === 'edit' && isRecording) && (
+                <div className={form.field}>
+                  <span>終了</span>
+                  <div className={form.dateTimeRow}>
+                    <DateField
+                      value={formEndDate}
+                      disabled={busy}
+                      onChange={setFormEndDate}
+                      aria-label="終了日"
+                    />
+                    <TimeField
+                      value={formEndTime}
+                      disabled={busy}
+                      onChange={setFormEndTime}
+                      onDayChange={(d) =>
+                        setFormEndDate((cur) =>
+                          cur ? addDaysKey(cur, d) : cur,
+                        )
+                      }
+                      aria-label="終了時刻"
+                    />
+                  </div>
+                </div>
               )}
-              <div className={styles.sheetActionsRight}>
-                <button
-                  type="button"
-                  className={`${styles.primary}${
-                    pendingSheet === 'save' ? ` ${spinnerStyles.busyBtn}` : ''
-                  }`}
-                  disabled={
-                    busy ||
-                    !formTaskId ||
-                    !formStartDate ||
-                    !formStartTime.trim() ||
-                    (!(sheet.type === 'edit' && isRecording) &&
-                      (!formEndDate || !formEndTime.trim()))
-                  }
-                  aria-busy={pendingSheet === 'save'}
-                  onClick={() => void submitSheet()}
-                >
-                  {pendingSheet === 'save' ? (
-                    <Spinner size={14} />
-                  ) : sheet.type === 'add' ? (
-                    'Add'
-                  ) : (
-                    'Save'
-                  )}
-                </button>
+
+              {formError && <p className={form.formError}>{formError}</p>}
+
+              <div className={form.sheetActions}>
+                {sheet.type === 'edit' && (
+                  <button
+                    type="button"
+                    className={`${form.danger}${
+                      pendingSheet === 'delete'
+                        ? ` ${spinnerStyles.busyBtn}`
+                        : ''
+                    }`}
+                    disabled={busy}
+                    aria-busy={pendingSheet === 'delete'}
+                    onClick={() => void submitDelete()}
+                  >
+                    {pendingSheet === 'delete' ? (
+                      <Spinner size={14} />
+                    ) : (
+                      '削除'
+                    )}
+                  </button>
+                )}
+                <div className={form.sheetActionsRight}>
+                  <button
+                    type="button"
+                    className={`${form.primary}${
+                      pendingSheet === 'save' ? ` ${spinnerStyles.busyBtn}` : ''
+                    }`}
+                    disabled={
+                      busy ||
+                      !formTaskId ||
+                      !formStartDate ||
+                      !formStartTime.trim() ||
+                      (!(sheet.type === 'edit' && isRecording) &&
+                        (!formEndDate || !formEndTime.trim()))
+                    }
+                    aria-busy={pendingSheet === 'save'}
+                    onClick={() => void submitSheet()}
+                  >
+                    {pendingSheet === 'save' ? (
+                      <Spinner size={14} />
+                    ) : sheet.type === 'add' ? (
+                      'Add'
+                    ) : (
+                      'Save'
+                    )}
+                  </button>
+                </div>
               </div>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )}
+            </>
+          )
+        }}
+      </Modal>
     </section>
   )
 }

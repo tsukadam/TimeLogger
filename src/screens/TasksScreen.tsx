@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { FolderIcon } from '../components/FolderIcon'
 import { FolderSelect } from '../components/FolderSelect'
+import { Modal } from '../components/Modal'
 import { Spinner } from '../components/Spinner'
 import spinnerStyles from '../components/Spinner.module.css'
+import form from '../components/form.module.css'
 import { FOLDER_PALETTE, TASK_BASE_CELL, findTaskColorPos, taskColorGrid } from '../lib/color'
 import {
   durationLabel,
@@ -12,7 +13,6 @@ import {
   todayKey,
 } from '../lib/time'
 import { useNowTick } from '../lib/useNowTick'
-import { useScrollLock } from '../lib/useScrollLock'
 import { useStore } from '../state/Store'
 import type { Folder, Task } from '../types'
 import styles from './TasksScreen.module.css'
@@ -94,7 +94,6 @@ export function TasksScreen() {
   } = useStore()
 
   const [sheet, setSheet] = useState<Sheet>({ type: 'closed' })
-  const [sheetClosing, setSheetClosing] = useState(false)
   const [addKind, setAddKind] = useState<AddKind>('folder')
   const [name, setName] = useState('')
   const [color, setColor] = useState(FOLDER_PALETTE[0]!)
@@ -111,10 +110,10 @@ export function TasksScreen() {
   const [pendingSheet, setPendingSheet] = useState<'save' | 'delete' | null>(
     null,
   )
+  const requestCloseRef = useRef<() => void>(() => {})
 
   const sheetOpen = sheet.type !== 'closed'
   const isEdit = sheet.type === 'edit-folder' || sheet.type === 'edit-task'
-  useScrollLock(sheetOpen)
   const now = useNowTick(current !== null)
 
   useEffect(() => {
@@ -228,14 +227,8 @@ export function TasksScreen() {
   }
 
   function closeSheet() {
-    // 閉じアニメーションを流してからアンマウント
-    if (sheetClosing) return
-    setSheetClosing(true)
-    window.setTimeout(() => {
-      setSheetClosing(false)
-      setSheet({ type: 'closed' })
-      setName('')
-    }, 160)
+    setSheet({ type: 'closed' })
+    setName('')
   }
 
   function openAdd() {
@@ -351,7 +344,7 @@ export function TasksScreen() {
           folderId,
         })
       }
-      closeSheet()
+      requestCloseRef.current()
     } catch {
       /* Store が表示 */
     } finally {
@@ -366,7 +359,7 @@ export function TasksScreen() {
       setPendingSheet('delete')
       try {
         await deleteFolder(sheet.id)
-        closeSheet()
+        requestCloseRef.current()
       } catch {
         /* Store が表示 */
       } finally {
@@ -380,7 +373,7 @@ export function TasksScreen() {
       setPendingSheet('delete')
       try {
         await deleteTask(sheet.id)
-        closeSheet()
+        requestCloseRef.current()
       } catch {
         /* Store が表示 */
       } finally {
@@ -570,226 +563,235 @@ export function TasksScreen() {
         </button>
       </div>
 
-      {sheetOpen &&
-        createPortal(
-        <div
-          className={
-            sheetClosing
-              ? `${styles.modalRoot} ${styles.modalClosing}`
-              : styles.modalRoot
-          }
-        >
-          <button
-            type="button"
-            className={styles.modalBackdrop}
-            aria-label="閉じる"
-            onClick={closeSheet}
-          />
-          <div
-            className={styles.sheet}
-            role="dialog"
-            aria-modal="true"
-            aria-label={isEdit ? '編集' : '追加'}
-          >
-          {sheet.type === 'add' && (
-            <div className={styles.kindRow}>
-              <button
-                type="button"
-                className={addKind === 'folder' ? styles.kindActive : styles.kind}
-                onClick={() => {
-                  setAddKind('folder')
-                  selectPaletteColor(FOLDER_PALETTE[0]!, {
-                    kind: 'folder',
-                    index: 0,
-                  })
-                }}
-              >
-                フォルダ
-              </button>
-              <button
-                type="button"
-                className={addKind === 'task' ? styles.kindActive : styles.kind}
-                disabled={folders.length === 0}
-                onClick={() => {
-                  setAddKind('task')
-                  if (colorFrom === 'picker' && pickerFill) {
-                    setColor(pickerFill)
-                    return
-                  }
-                  setColorFrom('palette')
-                  setPalettePos({
-                    kind: 'task',
-                    row: TASK_BASE_CELL.row,
-                    col: TASK_BASE_CELL.col,
-                  })
-                  const f = folders.find((x) => x.id === folderId) ?? folders[0]
-                  if (f) setColor(f.color)
-                }}
-              >
-                タスク
-              </button>
-            </div>
-          )}
-
-          {isEdit && (
-            <h2 className={styles.sheetTitle}>
-              {sheet.type === 'edit-folder' ? 'フォルダを編集' : 'タスクを編集'}
-            </h2>
-          )}
-
-          {addKind === 'task' && sheet.type !== 'add-task-in' && (
-            <div className={styles.field}>
-              <span>フォルダ</span>
-              <FolderSelect
-                folders={folders}
-                value={folderId}
-                disabled={busy}
-                onChange={(id) => setFolderId(id)}
-              />
-            </div>
-          )}
-
-          <label className={styles.field}>
-            <span>名前</span>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={addKind === 'folder' ? 'フォルダ名' : 'タスク名'}
-              disabled={busy}
-            />
-          </label>
-
-          <div className={styles.field}>
-            <span>色</span>
-            {addKind === 'folder' ? (
-              <div className={styles.colors}>
-                {FOLDER_PALETTE.map((c, index) => {
-                  const selected =
-                    colorFrom === 'palette' &&
-                    palettePos?.kind === 'folder' &&
-                    palettePos.index === index
-                  return (
-                    <button
-                      key={c}
-                      type="button"
-                      className={selected ? styles.colorActive : styles.color}
-                      style={{ background: c }}
-                      aria-label={c}
-                      onClick={() =>
-                        selectPaletteColor(c, { kind: 'folder', index })
-                      }
-                    />
-                  )
-                })}
-                <ColorPickerButton
-                  fill={pickerFill}
-                  selected={colorFrom === 'picker'}
-                  onPick={pickCustomColor}
-                />
-              </div>
-            ) : (
-              taskGrid && (
-                <div className={styles.colorGridWrap}>
-                  <div
-                    className={styles.colorGrid}
-                    role="listbox"
-                    aria-label="タスク色"
+      <Modal
+        open={sheetOpen}
+        onClose={closeSheet}
+        aria-label={isEdit ? '編集' : '追加'}
+        wide
+      >
+        {({ requestClose }) => {
+          requestCloseRef.current = requestClose
+          return (
+            <>
+              {sheet.type === 'add' && (
+                <div className={styles.kindRow}>
+                  <button
+                    type="button"
+                    className={
+                      addKind === 'folder' ? styles.kindActive : styles.kind
+                    }
+                    onClick={() => {
+                      setAddKind('folder')
+                      selectPaletteColor(FOLDER_PALETTE[0]!, {
+                        kind: 'folder',
+                        index: 0,
+                      })
+                    }}
                   >
-                    {taskGrid.flatMap((row, ri) =>
-                      row.map((c, ci) => {
-                        const isBase =
-                          ri === TASK_BASE_CELL.row && ci === TASK_BASE_CELL.col
-                        const selected =
-                          colorFrom === 'palette' &&
-                          palettePos?.kind === 'task' &&
-                          palettePos.row === ri &&
-                          palettePos.col === ci
-                        return (
-                          <button
-                            key={`${ri}-${ci}-${c}`}
-                            type="button"
-                            role="option"
-                            aria-selected={selected}
-                            aria-label={isBase ? `フォルダ色 ${c}` : c}
-                            className={
-                              selected
-                                ? `${styles.colorActive} ${styles.colorSwatch}`
-                                : styles.colorSwatch
-                            }
-                            style={{ background: c }}
-                            onClick={() =>
-                              selectPaletteColor(c, {
-                                kind: 'task',
-                                row: ri,
-                                col: ci,
-                              })
-                            }
-                          >
-                            {isBase && (
-                              <FolderIcon
-                                color="#fff"
-                                size={14}
-                                className={styles.baseFolderMark}
-                              />
-                            )}
-                          </button>
-                        )
-                      }),
-                    )}
-                  </div>
-                  <ColorPickerButton
-                    fill={pickerFill}
-                    selected={colorFrom === 'picker'}
-                    onPick={pickCustomColor}
+                    フォルダ
+                  </button>
+                  <button
+                    type="button"
+                    className={
+                      addKind === 'task' ? styles.kindActive : styles.kind
+                    }
+                    disabled={folders.length === 0}
+                    onClick={() => {
+                      setAddKind('task')
+                      if (colorFrom === 'picker' && pickerFill) {
+                        setColor(pickerFill)
+                        return
+                      }
+                      setColorFrom('palette')
+                      setPalettePos({
+                        kind: 'task',
+                        row: TASK_BASE_CELL.row,
+                        col: TASK_BASE_CELL.col,
+                      })
+                      const f =
+                        folders.find((x) => x.id === folderId) ?? folders[0]
+                      if (f) setColor(f.color)
+                    }}
+                  >
+                    タスク
+                  </button>
+                </div>
+              )}
+
+              {isEdit && (
+                <h2 className={form.sheetTitle}>
+                  {sheet.type === 'edit-folder'
+                    ? 'フォルダを編集'
+                    : 'タスクを編集'}
+                </h2>
+              )}
+
+              {addKind === 'task' && sheet.type !== 'add-task-in' && (
+                <div className={form.field}>
+                  <span>フォルダ</span>
+                  <FolderSelect
+                    folders={folders}
+                    value={folderId}
+                    disabled={busy}
+                    onChange={(id) => setFolderId(id)}
                   />
                 </div>
-              )
-            )}
-          </div>
+              )}
 
-          <div className={styles.sheetActions}>
-            {isEdit && (
-              <button
-                type="button"
-                className={`${styles.danger}${
-                  pendingSheet === 'delete' ? ` ${spinnerStyles.busyBtn}` : ''
-                }`}
-                disabled={busy || folderDeleteBlocked}
-                aria-busy={pendingSheet === 'delete'}
-                title={
-                  folderDeleteBlocked
-                    ? 'タスクがあるフォルダは削除できません'
-                    : undefined
-                }
-                onClick={() => void submitDelete()}
-              >
-                {pendingSheet === 'delete' ? <Spinner size={14} /> : '削除'}
-              </button>
-            )}
-            <div className={styles.sheetActionsRight}>
-              <button
-                type="button"
-                className={`${styles.primary}${
-                  pendingSheet === 'save' ? ` ${spinnerStyles.busyBtn}` : ''
-                }`}
-                disabled={busy || !name.trim() || (addKind === 'task' && !folderId)}
-                aria-busy={pendingSheet === 'save'}
-                onClick={() => void submitSheet()}
-              >
-                {pendingSheet === 'save' ? (
-                  <Spinner size={14} />
-                ) : isEdit ? (
-                  'Save'
+              <label className={form.field}>
+                <span>名前</span>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder={addKind === 'folder' ? 'フォルダ名' : 'タスク名'}
+                  disabled={busy}
+                />
+              </label>
+
+              <div className={form.field}>
+                <span>色</span>
+                {addKind === 'folder' ? (
+                  <div className={styles.colors}>
+                    {FOLDER_PALETTE.map((c, index) => {
+                      const selected =
+                        colorFrom === 'palette' &&
+                        palettePos?.kind === 'folder' &&
+                        palettePos.index === index
+                      return (
+                        <button
+                          key={c}
+                          type="button"
+                          className={
+                            selected ? styles.colorActive : styles.color
+                          }
+                          style={{ background: c }}
+                          aria-label={c}
+                          onClick={() =>
+                            selectPaletteColor(c, { kind: 'folder', index })
+                          }
+                        />
+                      )
+                    })}
+                    <ColorPickerButton
+                      fill={pickerFill}
+                      selected={colorFrom === 'picker'}
+                      onPick={pickCustomColor}
+                    />
+                  </div>
                 ) : (
-                  'Add'
+                  taskGrid && (
+                    <div className={styles.colorGridWrap}>
+                      <div
+                        className={styles.colorGrid}
+                        role="listbox"
+                        aria-label="タスク色"
+                      >
+                        {taskGrid.flatMap((row, ri) =>
+                          row.map((c, ci) => {
+                            const isBase =
+                              ri === TASK_BASE_CELL.row &&
+                              ci === TASK_BASE_CELL.col
+                            const selected =
+                              colorFrom === 'palette' &&
+                              palettePos?.kind === 'task' &&
+                              palettePos.row === ri &&
+                              palettePos.col === ci
+                            return (
+                              <button
+                                key={`${ri}-${ci}-${c}`}
+                                type="button"
+                                role="option"
+                                aria-selected={selected}
+                                aria-label={isBase ? `フォルダ色 ${c}` : c}
+                                className={
+                                  selected
+                                    ? `${styles.colorActive} ${styles.colorSwatch}`
+                                    : styles.colorSwatch
+                                }
+                                style={{ background: c }}
+                                onClick={() =>
+                                  selectPaletteColor(c, {
+                                    kind: 'task',
+                                    row: ri,
+                                    col: ci,
+                                  })
+                                }
+                              >
+                                {isBase && (
+                                  <FolderIcon
+                                    color="#fff"
+                                    size={14}
+                                    className={styles.baseFolderMark}
+                                  />
+                                )}
+                              </button>
+                            )
+                          }),
+                        )}
+                      </div>
+                      <ColorPickerButton
+                        fill={pickerFill}
+                        selected={colorFrom === 'picker'}
+                        onPick={pickCustomColor}
+                      />
+                    </div>
+                  )
                 )}
-              </button>
-            </div>
-          </div>
-          </div>
-        </div>,
-        document.body,
-      )}
+              </div>
+
+              <div className={form.sheetActions}>
+                {isEdit && (
+                  <button
+                    type="button"
+                    className={`${form.danger}${
+                      pendingSheet === 'delete'
+                        ? ` ${spinnerStyles.busyBtn}`
+                        : ''
+                    }`}
+                    disabled={busy || folderDeleteBlocked}
+                    aria-busy={pendingSheet === 'delete'}
+                    title={
+                      folderDeleteBlocked
+                        ? 'タスクがあるフォルダは削除できません'
+                        : undefined
+                    }
+                    onClick={() => void submitDelete()}
+                  >
+                    {pendingSheet === 'delete' ? (
+                      <Spinner size={14} />
+                    ) : (
+                      '削除'
+                    )}
+                  </button>
+                )}
+                <div className={form.sheetActionsRight}>
+                  <button
+                    type="button"
+                    className={`${form.primary}${
+                      pendingSheet === 'save' ? ` ${spinnerStyles.busyBtn}` : ''
+                    }`}
+                    disabled={
+                      busy ||
+                      !name.trim() ||
+                      (addKind === 'task' && !folderId)
+                    }
+                    aria-busy={pendingSheet === 'save'}
+                    onClick={() => void submitSheet()}
+                  >
+                    {pendingSheet === 'save' ? (
+                      <Spinner size={14} />
+                    ) : isEdit ? (
+                      'Save'
+                    ) : (
+                      'Add'
+                    )}
+                  </button>
+                </div>
+              </div>
+            </>
+          )
+        }}
+      </Modal>
     </section>
   )
 }

@@ -1,0 +1,94 @@
+/* Modal 内フォームの共通スタイル（Tasks / Activity / EventEdit） */
+
+.sheetTitle {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 650;
+  color: var(--fg);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.field input {
+  width: 100%;
+  min-width: 0;
+  height: 44px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--fg);
+  padding: 0 12px;
+  font: inherit;
+  /* iOS のフォーカスズーム防止＋TimeField と高さを揃える */
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dateTimeRow {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.dateTimeRow > * {
+  min-width: 0;
+}
+
+.formError {
+  margin: 0;
+  color: #ffd4d4;
+  font-size: 0.88rem;
+}
+
+.sheetActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* 決定ボタン行の上に余白（削除ボタンも同じ行なので一緒に下がる） */
+  margin-top: 8px;
+}
+
+.sheetActionsRight {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.primary,
+.danger {
+  border-radius: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--fg);
+  font: inherit;
+  min-width: 4.5em;
+  min-height: 2.4em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.primary {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.danger {
+  border-color: color-mix(in srgb, var(--danger) 50%, var(--line));
+  color: #ffd4d4;
+  background: color-mix(in srgb, var(--danger) 14%, var(--panel-2));
+}
+
+.danger:disabled {
+  opacity: 0.45;
+}
