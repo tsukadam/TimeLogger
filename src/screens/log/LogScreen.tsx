@@ -13,7 +13,7 @@ import {
 } from '../../lib/time'
 import { useNowTick } from '../../lib/useNowTick'
 import { useTabIndicator } from '../../lib/useTabIndicator'
-import { useStore } from '../../state/Store'
+import { useStoreActions, useStoreData } from '../../state/Store'
 import type { LogKind, LogPrefs } from '../../types'
 import styles from '../LogScreen.module.css'
 import { aggregateLogData, resolveDisplay } from './aggregate'
@@ -24,16 +24,8 @@ import { SliceBreakdown } from './SliceBreakdown'
 import { TotalsChart } from './TotalsChart'
 
 export function LogScreen() {
-  const {
-    loading,
-    error,
-    events,
-    tasks,
-    folders,
-    logPrefs,
-    clearError,
-    saveLogPrefs,
-  } = useStore()
+  const { loading, error, events, tasks, folders, logPrefs } = useStoreData()
+  const { clearError, saveLogPrefs } = useStoreActions()
 
   const today = todayKey()
   const ty = ymParts(today).y

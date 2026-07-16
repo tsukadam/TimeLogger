@@ -13,7 +13,11 @@ import {
   dateTimeInputToIso,
   isoToTimeInput,
 } from '../lib/time'
-import { useStore } from '../state/Store'
+import {
+  useStoreActions,
+  useStoreBusy,
+  useStoreData,
+} from '../state/Store'
 import type { Event, Task } from '../types'
 
 /** Activity の追加モード用。openAdd が計算して渡す */
@@ -56,7 +60,7 @@ function EventEditModalEdit({
   eventId: string
   onClose: () => void
 }) {
-  const { events, tasks } = useStore()
+  const { events, tasks } = useStoreData()
 
   const editing = useMemo(
     () => events.find((e) => e.id === eventId) ?? null,
@@ -104,8 +108,9 @@ type EventEditFormProps =
     }
 
 function EventEditForm(props: EventEditFormProps) {
-  const { busy, folders, tasks, updateEvent, addEvent, deleteEvent } =
-    useStore()
+  const busy = useStoreBusy()
+  const { folders, tasks } = useStoreData()
+  const { updateEvent, addEvent, deleteEvent } = useStoreActions()
   const isAdd = props.mode === 'add'
   const editing = props.mode === 'edit' ? props.editing : null
   const eventId = props.mode === 'edit' ? props.eventId : null

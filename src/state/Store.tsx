@@ -22,15 +22,17 @@ import type {
 } from '../types'
 import { validateEventRange } from './eventValidation'
 
-type StoreValue = {
+type StoreData = {
   loading: boolean
-  busy: boolean
   error: string | null
   folders: Folder[]
   tasks: Task[]
   events: Event[]
   current: Event | null
   logPrefs: LogPrefs | null
+}
+
+type StoreActions = {
   clearError: () => void
   reload: () => Promise<void>
   saveLogPrefs: (prefs: LogPrefs) => Promise<void>
@@ -40,7 +42,6 @@ type StoreValue = {
     folderId: string,
     patch: { name: string; color: string },
   ) => Promise<void>
-  /** フォルダを1つ上（-1）または下（+1）へ移動 */
   moveFolder: (folderId: string, dir: 1 | -1) => Promise<void>
   updateTask: (
     taskId: string,
@@ -66,7 +67,14 @@ type StoreValue = {
   stopCurrent: () => Promise<void>
 }
 
-const StoreContext = createContext<StoreValue | null>(null)
+type StoreValue = StoreData &
+  StoreActions & {
+    busy: boolean
+  }
+
+const BusyContext = createContext(false)
+const DataContext = createContext<StoreData | null>(null)
+const ActionsContext = createContext<StoreActions | null>(null)
 
 function requireOnline(): void {
   if (!isOnline()) {
@@ -576,16 +584,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [settingsFile],
   )
 
-  const value = useMemo<StoreValue>(
+  const data = useMemo<StoreData>(
     () => ({
       loading,
-      busy,
       error,
       folders,
       tasks,
       events,
       current,
       logPrefs,
+    }),
+    [loading, error, folders, tasks, events, current, logPrefs],
+  )
+
+  const actions = useMemo<StoreActions>(
+    () => ({
       clearError,
       reload,
       saveLogPrefs,
@@ -603,14 +616,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       stopCurrent,
     }),
     [
-      loading,
-      busy,
-      error,
-      folders,
-      tasks,
-      events,
-      current,
-      logPrefs,
       clearError,
       reload,
       saveLogPrefs,
@@ -630,12 +635,38 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
 
   return (
-    <StoreContext.Provider value={value}>{children}</StoreContext.Provider>
+    <ActionsContext.Provider value={actions}>
+      <DataContext.Provider value={data}>
+        <BusyContext.Provider value={busy}>{children}</BusyContext.Provider>
+      </DataContext.Provider>
+    </ActionsContext.Provider>
   )
 }
 
-export function useStore(): StoreValue {
-  const ctx = useContext(StoreContext)
+/** 書き込み中フラグのみ。記録開始/停止で Log を巻き込みたくないとき用 */
+export function useStoreBusy(): boolean {
+  return useContext(BusyContext)
+}
+
+export function useStoreData(): StoreData {
+  const ctx = useContext(DataContext)
   if (!ctx) throw new Error('StoreProvider missing')
   return ctx
+}
+
+export function useStoreActions(): StoreActions {
+  const ctx = useContext(ActionsContext)
+  if (!ctx) throw new Error('StoreProvider missing')
+  return ctx
+}
+
+/** 互換: busy / data / actions をすべて購読 */
+export function useStore(): StoreValue {
+  const busy = useStoreBusy()
+  const data = useStoreData()
+  const actions = useStoreActions()
+  return useMemo(
+    () => ({ busy, ...data, ...actions }),
+    [busy, data, actions],
+  )
 }

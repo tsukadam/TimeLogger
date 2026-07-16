@@ -14,7 +14,7 @@ import {
   nowIso,
 } from '../lib/time'
 import { useNowTick } from '../lib/useNowTick'
-import { useStore } from '../state/Store'
+import { useStoreActions, useStoreBusy, useStoreData } from '../state/Store'
 import type { Event } from '../types'
 import styles from './ActivityScreen.module.css'
 
@@ -97,8 +97,9 @@ function msToInputs(ms: number): { date: string; time: string } {
 }
 
 export function ActivityScreen() {
-  const { loading, busy, error, events, tasks, folders, clearError } =
-    useStore()
+  const busy = useStoreBusy()
+  const { loading, error, events, tasks, folders } = useStoreData()
+  const { clearError } = useStoreActions()
   const [visible, setVisible] = useState(PAGE)
   const [sheet, setSheet] = useState<SheetState>({ type: 'closed' })
   const sentinelRef = useRef<HTMLDivElement | null>(null)

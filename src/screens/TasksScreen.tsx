@@ -14,7 +14,11 @@ import {
   todayKey,
 } from '../lib/time'
 import { useNowTick } from '../lib/useNowTick'
-import { useStore } from '../state/Store'
+import {
+  useStoreActions,
+  useStoreBusy,
+  useStoreData,
+} from '../state/Store'
 import type { Folder, Task } from '../types'
 import styles from './TasksScreen.module.css'
 
@@ -74,14 +78,9 @@ function ColorPickerButton({
 }
 
 export function TasksScreen() {
+  const busy = useStoreBusy()
+  const { loading, error, folders, tasks, events, current } = useStoreData()
   const {
-    loading,
-    busy,
-    error,
-    folders,
-    tasks,
-    events,
-    current,
     clearError,
     addFolder,
     addTask,
@@ -92,7 +91,7 @@ export function TasksScreen() {
     stopCurrent,
     deleteFolder,
     deleteTask,
-  } = useStore()
+  } = useStoreActions()
 
   const [sheet, setSheet] = useState<Sheet>({ type: 'closed' })
   const [addKind, setAddKind] = useState<AddKind>('folder')

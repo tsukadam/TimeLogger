@@ -95,7 +95,7 @@
 
 ## Phase 7: Store の整理（リスク: 中）
 
-- [x] `value` オブジェクトを `useMemo` 化（現状毎レンダー新規生成で、全消費者が毎回再レンダー）
+- [x] `value` オブジェクトを `useMemo` 化（現状毎レンダー新規生成で、全消費者が毎回再レンダー）→ さらに Busy / Data / Actions の Context 分割
 - [x] `updateEvent` / `addEvent` のバリデーション（未来判定・重複判定・最小長判定がほぼ同文で二重）→ 共通関数 `validateEventRange` に抽出
 - [x] `FolderSelect` と `TaskSelect`（アイコンと extraOption 以外同一）→ ジェネリックな `OptionSelect` に統合するか要検討（無理はしない）→ **今回は統合しない**（ROI 低・extraOption 差分あり）
 - [x] `SheetState`（Activity）と `Sheet`（Tasks）の同型の型定義 → 共通化は Phase 5 で自然に解消される見込み → **対象外**（イベント CRUD とフォルダ/タスク CRUD でドメインが異なる）
