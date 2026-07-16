@@ -10,7 +10,7 @@ import {
 import { fetchResource, isOnline, putResource } from '../api/client'
 import { newId } from '../lib/id'
 import { remapPaletteTaskColor } from '../lib/color'
-import { MIN_RECORD_MS, elapsedMs, formatEventRange, nowIso } from '../lib/time'
+import { elapsedMs, MIN_RECORD_MS, nowIso } from '../lib/time'
 import type {
   Event,
   EventsFile,
@@ -20,6 +20,7 @@ import type {
   Task,
   TasksFile,
 } from '../types'
+import { validateEventRange } from './eventValidation'
 
 type StoreValue = {
   loading: boolean
@@ -71,42 +72,6 @@ function requireOnline(): void {
   if (!isOnline()) {
     throw new Error('オフラインです')
   }
-}
-
-/** 手入力時刻の「未来」判定の猶予（入力中の時間経過を許容） */
-const FUTURE_GRACE_MS = 60000
-
-/**
- * 既存記録との時間重複を探す。記録中（endedAt null）は現在時刻まで
- * 占有しているとみなす。端点の一致（10:00終了と10:00開始）は重複としない。
- *
- * 判定は秒精度（切り捨て）。リアルタイム記録はミリ秒付きで保存されるが、
- * 表示は秒までで編集入力も整数秒のため、表示上「同じ秒」に合わせた編集が
- * 見えない端数のせいで弾かれないようにする。
- */
-function findOverlap(
-  events: Event[],
-  startMs: number,
-  endMs: number,
-  excludeId: string | null,
-  nowMs: number,
-): Event | null {
-  const floorSec = (ms: number) => Math.floor(ms / 1000)
-  const startSec = floorSec(startMs)
-  const endSec = floorSec(endMs)
-  for (const ev of events) {
-    if (excludeId !== null && ev.id === excludeId) continue
-    const s = floorSec(new Date(ev.startedAt).getTime())
-    const e = floorSec(ev.endedAt ? new Date(ev.endedAt).getTime() : nowMs)
-    if (startSec < e && s < endSec) return ev
-  }
-  return null
-}
-
-function overlapError(hit: Event): Error {
-  return new Error(
-    `既存の記録（${hit.taskName} ${formatEventRange(hit.startedAt, hit.endedAt)}）と時間が重なっています`,
-  )
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -413,30 +378,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!folder) throw new Error('フォルダが見つかりません')
 
       const startMs = new Date(patch.startedAt).getTime()
-      if (!Number.isFinite(startMs)) throw new Error('開始時刻が不正です')
-
       const nowMs = Date.now()
       const endedAt = patch.endedAt
-      let endMs = nowMs // 記録中は現在時刻まで占有しているとみなす
+      // 記録中は現在時刻まで占有しているとみなす
+      let endMs = nowMs
+      let validateEndBound = false
       if (endedAt !== null) {
         endMs = new Date(endedAt).getTime()
-        if (!Number.isFinite(endMs)) throw new Error('終了時刻が不正です')
-        if (endMs <= startMs) throw new Error('終了は開始より後にしてください')
-        if (endMs - startMs < MIN_RECORD_MS) {
-          throw new Error('1秒未満の記録にはできません')
-        }
+        validateEndBound = true
       }
-
-      // 未来の記録は作れない（リアルタイム記録との衝突防止）
-      if (
-        startMs > nowMs + FUTURE_GRACE_MS ||
-        (endedAt !== null && endMs > nowMs + FUTURE_GRACE_MS)
-      ) {
-        throw new Error('未来の時間には記録を作れません')
-      }
-      // 他の記録との時間重複は禁止
-      const hit = findOverlap(eventsFile.events, startMs, endMs, eventId, nowMs)
-      if (hit) throw overlapError(hit)
+      validateEventRange({
+        events: eventsFile.events,
+        startMs,
+        endMs,
+        excludeId: eventId,
+        nowMs,
+        validateEndBound,
+      })
 
       await runWrite(async () => {
         const t = nowIso()
@@ -487,21 +445,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       const startMs = new Date(patch.startedAt).getTime()
       const endMs = new Date(patch.endedAt).getTime()
-      if (!Number.isFinite(startMs)) throw new Error('開始時刻が不正です')
-      if (!Number.isFinite(endMs)) throw new Error('終了時刻が不正です')
-      if (endMs <= startMs) throw new Error('終了は開始より後にしてください')
-      if (endMs - startMs < MIN_RECORD_MS) {
-        throw new Error('1秒未満の記録にはできません')
-      }
-
-      const nowMs = Date.now()
-      // 未来の記録は作れない（リアルタイム記録との衝突防止）
-      if (startMs > nowMs + FUTURE_GRACE_MS || endMs > nowMs + FUTURE_GRACE_MS) {
-        throw new Error('未来の時間には記録を作れません')
-      }
-      // 他の記録との時間重複は禁止
-      const hit = findOverlap(eventsFile.events, startMs, endMs, null, nowMs)
-      if (hit) throw overlapError(hit)
+      validateEventRange({
+        events: eventsFile.events,
+        startMs,
+        endMs,
+        excludeId: null,
+        nowMs: Date.now(),
+        validateEndBound: true,
+      })
 
       await runWrite(async () => {
         const t = nowIso()
@@ -620,33 +571,63 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     () => events.find((e) => e.endedAt === null) ?? null,
     [events],
   )
-  const logPrefs = settingsFile?.log ?? null
+  const logPrefs = useMemo(
+    () => settingsFile?.log ?? null,
+    [settingsFile],
+  )
 
-  const value: StoreValue = {
-    loading,
-    busy,
-    error,
-    folders,
-    tasks,
-    events,
-    current,
-    logPrefs,
-    clearError,
-    reload,
-    saveLogPrefs,
-    addFolder,
-    addTask,
-    updateFolder,
-    moveFolder,
-    updateTask,
-    updateEvent,
-    addEvent,
-    deleteEvent,
-    deleteFolder,
-    deleteTask,
-    startTask,
-    stopCurrent,
-  }
+  const value = useMemo<StoreValue>(
+    () => ({
+      loading,
+      busy,
+      error,
+      folders,
+      tasks,
+      events,
+      current,
+      logPrefs,
+      clearError,
+      reload,
+      saveLogPrefs,
+      addFolder,
+      addTask,
+      updateFolder,
+      moveFolder,
+      updateTask,
+      updateEvent,
+      addEvent,
+      deleteEvent,
+      deleteFolder,
+      deleteTask,
+      startTask,
+      stopCurrent,
+    }),
+    [
+      loading,
+      busy,
+      error,
+      folders,
+      tasks,
+      events,
+      current,
+      logPrefs,
+      clearError,
+      reload,
+      saveLogPrefs,
+      addFolder,
+      addTask,
+      updateFolder,
+      moveFolder,
+      updateTask,
+      updateEvent,
+      addEvent,
+      deleteEvent,
+      deleteFolder,
+      deleteTask,
+      startTask,
+      stopCurrent,
+    ],
+  )
 
   return (
     <StoreContext.Provider value={value}>{children}</StoreContext.Provider>
