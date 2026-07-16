@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { daysInMonth, pad2, todayKey } from '../lib/time'
+import { todayKey } from '../lib/time'
 import { useEscapeClose } from '../lib/useOutsideClose'
 import { useScrollLock } from '../lib/useScrollLock'
+import { MonthCalendar } from './MonthCalendar'
 import styles from './DateField.module.css'
 
 /**
@@ -36,31 +37,6 @@ export function DateField({
 
   useEscapeClose(open, () => setOpen(false))
 
-  const shiftMonth = (d: number) => {
-    let m = view.m + d
-    let y = view.y
-    if (m < 1) {
-      m = 12
-      y -= 1
-    } else if (m > 12) {
-      m = 1
-      y += 1
-    }
-    setView({ y, m })
-  }
-
-  const first = new Date(view.y, view.m - 1, 1)
-  const padLead = (first.getDay() + 6) % 7 // 月曜はじまり
-  const dim = daysInMonth(view.y, view.m)
-  const cells: (string | null)[] = [
-    ...Array.from({ length: padLead }, () => null),
-    ...Array.from(
-      { length: dim },
-      (_, i) => `${view.y}-${pad2(view.m)}-${pad2(i + 1)}`,
-    ),
-  ]
-  while (cells.length % 7 !== 0) cells.push(null)
-
   return (
     <div className={styles.wrap}>
       <button
@@ -92,55 +68,16 @@ export function DateField({
             />
             {/* 毎回同じ場所に出るよう画面中央に固定表示 */}
             <div className={styles.panel} role="dialog" aria-label="日付">
-              <div className={styles.calHead}>
-                <button
-                  type="button"
-                  className={styles.arrow}
-                  onClick={() => shiftMonth(-1)}
-                >
-                  ‹
-                </button>
-                <span className={styles.calTitle}>
-                  {view.y}年{view.m}月
-                </span>
-                <button
-                  type="button"
-                  className={styles.arrow}
-                  onClick={() => shiftMonth(1)}
-                >
-                  ›
-                </button>
-              </div>
-              <div className={styles.calWeekdays}>
-                {['月', '火', '水', '木', '金', '土', '日'].map((w) => (
-                  <span key={w}>{w}</span>
-                ))}
-              </div>
-              <div className={styles.calGrid}>
-                {cells.map((day, i) => {
-                  if (!day)
-                    return <span key={`e${i}`} className={styles.calEmpty} />
-                  return (
-                    <button
-                      key={day}
-                      type="button"
-                      className={[
-                        styles.calDay,
-                        day === value ? styles.calDayOn : '',
-                        day === todayKey() ? styles.calToday : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' ')}
-                      onClick={() => {
-                        onChange(day)
-                        setOpen(false)
-                      }}
-                    >
-                      {Number(day.slice(8, 10))}
-                    </button>
-                  )
-                })}
-              </div>
+              <MonthCalendar
+                viewYm={view}
+                onViewYm={setView}
+                mode="single"
+                selectedDay={value}
+                onPickDay={(day) => {
+                  onChange(day)
+                  setOpen(false)
+                }}
+              />
             </div>
           </>,
           document.body,

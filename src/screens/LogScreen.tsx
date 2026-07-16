@@ -9,13 +9,14 @@ import {
 import { createPortal } from 'react-dom'
 import { EventEditModal } from '../components/EventEditModal'
 import { FolderIcon } from '../components/FolderIcon'
+import { MonthCalendar } from '../components/MonthCalendar'
+import calStyles from '../components/MonthCalendar.module.css'
 import {
   DAY_MS,
   addDaysKey,
   addMonthsKey,
   dateKey,
   dayStartMs,
-  daysInMonth,
   durationLabel,
   formatDurationHms,
   formatEventRange,
@@ -24,7 +25,6 @@ import {
   mondayKeyOf,
   monthKey,
   nowIso,
-  pad2,
   todayKey,
   weekdayShort,
   ymParts,
@@ -248,159 +248,6 @@ function buildApplied(prefs: LogPrefs, nowMs: number, events: Event[]): AppliedR
       ? `${formatMd(lo)}（${weekdayShort(lo)}）〜 ${formatMd(hi)}（${weekdayShort(hi)}）`
       : `${formatMd(lo)}（${weekdayShort(lo)}）`,
   }
-}
-
-function MonthCalendar({
-  viewYm,
-  onViewYm,
-  mode,
-  selectedDay,
-  selectedWeekStart,
-  selectedMonthStart,
-  highlightStart,
-  highlightEnd,
-  onPickDay,
-  maxYear,
-}: {
-  viewYm: { y: number; m: number }
-  onViewYm: (v: { y: number; m: number }) => void
-  mode: 'day' | 'week' | 'month' | 'custom'
-  selectedDay?: string
-  selectedWeekStart?: string
-  selectedMonthStart?: string
-  highlightStart?: string
-  highlightEnd?: string
-  onPickDay: (dayKey: string) => void
-  maxYear: number
-}) {
-  const first = monthKey(viewYm.y, viewYm.m)
-  const firstW = weekdayShort(first)
-  const leadMap: Record<string, number> = {
-    月: 0,
-    火: 1,
-    水: 2,
-    木: 3,
-    金: 4,
-    土: 5,
-    日: 6,
-  }
-  const padLead = leadMap[firstW] ?? 0
-  const dim = daysInMonth(viewYm.y, viewYm.m)
-  const cells: (string | null)[] = [
-    ...Array.from({ length: padLead }, () => null),
-    ...Array.from({ length: dim }, (_, i) =>
-      `${viewYm.y}-${pad2(viewYm.m)}-${pad2(i + 1)}`,
-    ),
-  ]
-  while (cells.length % 7 !== 0) cells.push(null)
-
-  const shiftMonth = (d: number) => {
-    let m = viewYm.m + d
-    let y = viewYm.y
-    if (m < 1) {
-      m = 12
-      y -= 1
-    } else if (m > 12) {
-      m = 1
-      y += 1
-    }
-    onViewYm({ y, m })
-  }
-
-  const shiftYear = (d: number) => {
-    const y = Math.min(maxYear, Math.max(1970, viewYm.y + d))
-    onViewYm({ y, m: viewYm.m })
-  }
-
-  const hs =
-    highlightStart && highlightEnd
-      ? highlightStart <= highlightEnd
-        ? highlightStart
-        : highlightEnd
-      : highlightStart
-  const he =
-    highlightStart && highlightEnd
-      ? highlightStart <= highlightEnd
-        ? highlightEnd
-        : highlightStart
-      : highlightEnd
-
-  return (
-    <div className={styles.cal}>
-      <div className={styles.calHead}>
-        <div className={styles.calNav}>
-          <button type="button" className={styles.arrow} onClick={() => shiftYear(-1)}>
-            «
-          </button>
-          <button type="button" className={styles.arrow} onClick={() => shiftMonth(-1)}>
-            ‹
-          </button>
-        </div>
-        <span className={styles.calTitle}>
-          {viewYm.y}年{viewYm.m}月
-        </span>
-        <div className={styles.calNav}>
-          <button type="button" className={styles.arrow} onClick={() => shiftMonth(1)}>
-            ›
-          </button>
-          <button
-            type="button"
-            className={styles.arrow}
-            disabled={viewYm.y >= maxYear}
-            onClick={() => shiftYear(1)}
-          >
-            »
-          </button>
-        </div>
-      </div>
-      <div className={styles.calWeekdays}>
-        {['月', '火', '水', '木', '金', '土', '日'].map((w) => (
-          <span key={w}>{w}</span>
-        ))}
-      </div>
-      <div className={styles.calGrid}>
-        {cells.map((day, i) => {
-          if (!day) return <span key={`e${i}`} className={styles.calEmpty} />
-          let selected = false
-          let inBand = false
-          if (mode === 'day') selected = day === selectedDay
-          if (mode === 'week' && selectedWeekStart) {
-            inBand =
-              day >= selectedWeekStart &&
-              day <= addDaysKey(selectedWeekStart, 6)
-            selected = day === selectedWeekStart
-          }
-          if (mode === 'month' && selectedMonthStart) {
-            inBand =
-              day >= selectedMonthStart &&
-              day < addMonthsKey(selectedMonthStart, 1)
-            selected = day === selectedMonthStart
-          }
-          if (mode === 'custom' && hs && he) {
-            inBand = day >= hs && day <= he
-            selected = day === hs || day === he
-          }
-          return (
-            <button
-              key={day}
-              type="button"
-              className={[
-                styles.calDay,
-                inBand ? styles.calDayBand : '',
-                selected ? styles.calDayOn : '',
-                day === todayKey() ? styles.calToday : '',
-              ]
-                .filter(Boolean)
-                .join(' ')}
-              onClick={() => onPickDay(day)}
-            >
-              {Number(day.slice(8, 10))}
-            </button>
-          )
-        })}
-      </div>
-    </div>
-  )
 }
 
 /** タップで出すタスク名チップ（スマホはホバーがないため） */
@@ -1482,6 +1329,7 @@ export function LogScreen() {
                 selectedMonthStart={draft.monthStart}
                 highlightStart={draft.customStart}
                 highlightEnd={draft.customEnd}
+                showYearNav
                 maxYear={ty}
                 onPickDay={(d) => {
                   // Day/Week/Month は選んだ時点で即適用（Apply 不要）
@@ -1519,11 +1367,11 @@ export function LogScreen() {
 
             {draft.kind === 'year' && (
               <div>
-                <div className={styles.calHead}>
-                  <div className={styles.calNav}>
+                <div className={calStyles.calHead}>
+                  <div className={calStyles.calNav}>
                     <button
                       type="button"
-                      className={styles.arrow}
+                      className={calStyles.arrow}
                       onClick={() => {
                         const ys = ymParts(draft.yearStart)
                         setDraft({
@@ -1535,13 +1383,13 @@ export function LogScreen() {
                       «
                     </button>
                   </div>
-                  <span className={styles.calTitle}>
+                  <span className={calStyles.calTitle}>
                     {ymParts(draft.yearStart).y}年
                   </span>
-                  <div className={styles.calNav}>
+                  <div className={calStyles.calNav}>
                     <button
                       type="button"
-                      className={styles.arrow}
+                      className={calStyles.arrow}
                       disabled={ymParts(draft.yearStart).y >= ty}
                       onClick={() => {
                         const ys = ymParts(draft.yearStart)

@@ -64,10 +64,10 @@
 
 ## Phase 4: カレンダーの一本化（リスク: 中）
 
-- [ ] 月グリッド生成を共通化: DateField の `(first.getDay() + 6) % 7` 方式に統一（LogScreen の `MonthCalendar` は曜日ラベル文字列から先頭空白数を引く実装でロケール依存が怖い）
-- [ ] `MonthCalendar`（LogScreen 内 150 行・props 10 個）を `src/components/MonthCalendar.tsx` に切り出し、DateField はそれを内包する形に
-- [ ] `cal*` 系 CSS（LogScreen.module.css ↔ DateField.module.css にコピー）を `MonthCalendar.module.css` に集約
-- [ ] 曜日ヘッダー配列 `['月','火',...]` のリテラル重複も解消
+- [x] 月グリッド生成を共通化: DateField の `(first.getDay() + 6) % 7` 方式に統一（LogScreen の `MonthCalendar` は曜日ラベル文字列から先頭空白数を引く実装でロケール依存が怖い）
+- [x] `MonthCalendar`（LogScreen 内 150 行・props 10 個）を `src/components/MonthCalendar.tsx` に切り出し、DateField はそれを内包する形に
+- [x] `cal*` 系 CSS（LogScreen.module.css ↔ DateField.module.css にコピー）を `MonthCalendar.module.css` に集約
+- [x] 曜日ヘッダー配列 `['月','火',...]` のリテラル重複も解消
 
 ## Phase 5: 記録編集フォームの統一（リスク: 中〜高）
 
