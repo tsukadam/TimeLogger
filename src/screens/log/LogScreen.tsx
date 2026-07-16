@@ -55,7 +55,7 @@ export function LogScreen() {
     }
   }, [prefs.kind])
 
-  const { wrapRef: kindTabsRef, ind: kindInd } = useTabIndicator(prefs.kind, [
+  const { wrapRef: periodTabsRef, ind: periodInd } = useTabIndicator(prefs.kind, [
     prefsReady,
   ])
 
@@ -172,7 +172,7 @@ export function LogScreen() {
         </div>
       )}
 
-      <div className={styles.kindTabs} ref={kindTabsRef}>
+      <div className={styles.periodTabs} ref={periodTabsRef}>
         {(
           [
             ['all', 'All'],
@@ -188,16 +188,16 @@ export function LogScreen() {
             type="button"
             data-tab={k}
             data-text={label}
-            className={prefs.kind === k ? styles.kindActive : undefined}
+            className={prefs.kind === k ? styles.periodActive : undefined}
             onClick={() => setKind(k)}
           >
             {label}
           </button>
         ))}
-        {kindInd && (
+        {periodInd && (
           <span
-            className={styles.kindInd}
-            style={{ left: kindInd.left, width: kindInd.width }}
+            className={styles.periodInd}
+            style={{ left: periodInd.left, width: periodInd.width }}
             aria-hidden
           />
         )}

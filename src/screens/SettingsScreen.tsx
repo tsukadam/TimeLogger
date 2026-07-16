@@ -1,4 +1,4 @@
-import styles from './Placeholder.module.css'
+import styles from './SettingsScreen.module.css'
 
 export function SettingsScreen() {
   return (

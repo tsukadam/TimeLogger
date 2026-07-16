@@ -269,21 +269,21 @@
   cursor: pointer;
 }
 
-.kindRow {
+.addTargetRow {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
 
-.kind,
-.kindActive {
+.addTarget,
+.addTargetActive {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px;
   background: var(--panel-2);
 }
 
-.kindActive {
+.addTargetActive {
   border-color: var(--accent);
   color: var(--fg);
   font-weight: 650;

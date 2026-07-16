@@ -8,7 +8,7 @@
   max-width: 100%;
 }
 
-.kindTabs {
+.periodTabs {
   position: relative;
   display: flex;
   flex-wrap: nowrap;
@@ -20,11 +20,11 @@
   max-width: 100%;
 }
 
-.kindTabs::-webkit-scrollbar {
+.periodTabs::-webkit-scrollbar {
   display: none;
 }
 
-.kindTabs button {
+.periodTabs button {
   flex: 1 0 auto;
   border: none;
   background: transparent;
@@ -37,7 +37,7 @@
 }
 
 /* 太字時の幅を不可視ゴーストで常に確保し、タブ幅を固定する */
-.kindTabs button::after {
+.periodTabs button::after {
   content: attr(data-text);
   display: block;
   height: 0;
@@ -46,13 +46,12 @@
   font-weight: 600;
 }
 
-.kindTabs button.kindActive {
+.periodTabs button.periodActive {
   color: var(--fg);
   font-weight: 600;
 }
 
-/* アクティブタブへぬるっと移動するオレンジバー */
-.kindInd {
+.periodInd {
   position: absolute;
   bottom: 0;
   height: 2px;

@@ -111,10 +111,10 @@
 
 ## 命名の揺れ（各 Phase のついでに直す）
 
-- モーダル呼称の統一: picker / sheet / modal / panel / overlay / backdrop が混在 → 「Modal（骨格）+ sheet（中身）+ backdrop（背面）」に統一
-- `kind` の多義（LogKind / AddKind / CSS の .kind）→ CSS クラス名を機能名に変更
-- UI の「Genres」はデータモデル上 Folder → どちらかに寄せるか要確認（表示は Genres のままでもコード内の変数名は folder に統一）
-- `SettingsScreen` が `Placeholder.module.css` を使用 → `SettingsScreen.module.css` にリネーム
+- モーダル呼称の統一: picker / sheet / modal / panel / overlay / backdrop が混在 → 「Modal（骨格）+ sheet（中身）+ backdrop（背面）」に統一（低 ROI・未着手）
+- [x] `kind` の多義（LogKind / AddKind / CSS の .kind）→ Log CSS は `period*`、Tasks 追加 UI は `addTarget*` に変更（型 `AddTarget`）。`LogKind` / PalettePos の `kind` はドメイン語として残す
+- UI の「Genres」はデータモデル上 Folder → 表示は Genres のまま、コードは folder で統一済み
+- [x] `SettingsScreen` が `Placeholder.module.css` を使用 → `SettingsScreen.module.css` にリネーム
 
 ## やらないこと（今回のスコープ外）
 

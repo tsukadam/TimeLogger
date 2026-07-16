@@ -22,7 +22,7 @@ import {
 import type { Folder, Task } from '../types'
 import styles from './TasksScreen.module.css'
 
-type AddKind = 'folder' | 'task'
+type AddTarget = 'folder' | 'task'
 type PalettePos =
   | { kind: 'task'; row: number; col: number }
   | { kind: 'folder'; index: number }
@@ -94,7 +94,7 @@ export function TasksScreen() {
   } = useStoreActions()
 
   const [sheet, setSheet] = useState<Sheet>({ type: 'closed' })
-  const [addKind, setAddKind] = useState<AddKind>('folder')
+  const [addTarget, setAddTarget] = useState<AddTarget>('folder')
   const [name, setName] = useState('')
   const [color, setColor] = useState(FOLDER_PALETTE[0]!)
   const [folderId, setFolderId] = useState('')
@@ -131,7 +131,7 @@ export function TasksScreen() {
   }, [selectedFolder])
 
   useEffect(() => {
-    if (!sheetOpen || addKind !== 'task' || !taskGrid) return
+    if (!sheetOpen || addTarget !== 'task' || !taskGrid) return
     if (colorFrom === 'picker') {
       if (pickerFill) setColor(pickerFill)
       return
@@ -140,7 +140,7 @@ export function TasksScreen() {
       const next = taskGrid[palettePos.row]?.[palettePos.col]
       if (next) setColor(next)
     }
-  }, [sheetOpen, addKind, taskGrid, colorFrom, pickerFill, palettePos])
+  }, [sheetOpen, addTarget, taskGrid, colorFrom, pickerFill, palettePos])
 
   const day = todayKey(new Date(now))
 
@@ -232,8 +232,8 @@ export function TasksScreen() {
   }
 
   function openAdd() {
-    const kind: AddKind = folders.length === 0 ? 'folder' : 'task'
-    setAddKind(kind)
+    const kind: AddTarget = folders.length === 0 ? 'folder' : 'task'
+    setAddTarget(kind)
     setName('')
     setFolderId(folders[0]?.id ?? '')
     setPickerFill(null)
@@ -253,7 +253,7 @@ export function TasksScreen() {
   }
 
   function openAddTaskIn(folder: Folder) {
-    setAddKind('task')
+    setAddTarget('task')
     setName('')
     setFolderId(folder.id)
     setPickerFill(null)
@@ -268,7 +268,7 @@ export function TasksScreen() {
   }
 
   function openEditFolder(folder: Folder) {
-    setAddKind('folder')
+    setAddTarget('folder')
     setName(folder.name)
     setColor(folder.color)
     setPickerFill(null)
@@ -287,7 +287,7 @@ export function TasksScreen() {
   }
 
   function openEditTask(task: Task) {
-    setAddKind('task')
+    setAddTarget('task')
     setName(task.name)
     setFolderId(task.folderId)
     setColor(task.color)
@@ -327,7 +327,7 @@ export function TasksScreen() {
     setPendingSheet('save')
     try {
       if (sheet.type === 'add') {
-        if (addKind === 'folder') await addFolder(trimmed, color)
+        if (addTarget === 'folder') await addFolder(trimmed, color)
         else {
           if (!folderId) return
           await addTask(folderId, trimmed, color)
@@ -574,14 +574,14 @@ export function TasksScreen() {
           return (
             <>
               {sheet.type === 'add' && (
-                <div className={styles.kindRow}>
+                <div className={styles.addTargetRow}>
                   <button
                     type="button"
                     className={
-                      addKind === 'folder' ? styles.kindActive : styles.kind
+                      addTarget === 'folder' ? styles.addTargetActive : styles.addTarget
                     }
                     onClick={() => {
-                      setAddKind('folder')
+                      setAddTarget('folder')
                       selectPaletteColor(FOLDER_PALETTE[0]!, {
                         kind: 'folder',
                         index: 0,
@@ -593,11 +593,11 @@ export function TasksScreen() {
                   <button
                     type="button"
                     className={
-                      addKind === 'task' ? styles.kindActive : styles.kind
+                      addTarget === 'task' ? styles.addTargetActive : styles.addTarget
                     }
                     disabled={folders.length === 0}
                     onClick={() => {
-                      setAddKind('task')
+                      setAddTarget('task')
                       if (colorFrom === 'picker' && pickerFill) {
                         setColor(pickerFill)
                         return
@@ -626,7 +626,7 @@ export function TasksScreen() {
                 </h2>
               )}
 
-              {addKind === 'task' && sheet.type !== 'add-task-in' && (
+              {addTarget === 'task' && sheet.type !== 'add-task-in' && (
                 <div className={form.field}>
                   <span>フォルダ</span>
                   <FolderSelect
@@ -643,14 +643,14 @@ export function TasksScreen() {
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder={addKind === 'folder' ? 'フォルダ名' : 'タスク名'}
+                  placeholder={addTarget === 'folder' ? 'フォルダ名' : 'タスク名'}
                   disabled={busy}
                 />
               </label>
 
               <div className={form.field}>
                 <span>色</span>
-                {addKind === 'folder' ? (
+                {addTarget === 'folder' ? (
                   <div className={styles.colors}>
                     {FOLDER_PALETTE.map((c, index) => {
                       const selected =
@@ -773,7 +773,7 @@ export function TasksScreen() {
                     disabled={
                       busy ||
                       !name.trim() ||
-                      (addKind === 'task' && !folderId)
+                      (addTarget === 'task' && !folderId)
                     }
                     aria-busy={pendingSheet === 'save'}
                     onClick={() => void submitSheet()}
