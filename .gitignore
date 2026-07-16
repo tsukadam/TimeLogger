@@ -17,3 +17,7 @@ Thumbs.db
 
 # TypeScript
 *.tsbuildinfo
+
+# API 書き込みの一時・ロック（data/ 配下）
+data/*.lock
+data/.*.tmp
