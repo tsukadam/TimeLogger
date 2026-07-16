@@ -30,7 +30,7 @@
   - `.sheetTitle`（LogScreen.module.css のみ未使用）
   - `.field select`（ActivityScreen.module.css。ネイティブ select はもう無い）
 - [x] `vite.config.ts` — `@` エイリアス（`@/` import 0 件のため削除。必要になったら復活は容易）
-- [ ] `Store.tsx` — `reload`（Context に公開しているが消費者なし。将来の手動リロード用に**残した**。消すなら要指示）
+- [x] `Store.tsx` — `reload` / `useStore()` レガシー削除（初回ロードは Provider 内の useEffect のみ）
 
 済:
 - [x] `TasksScreen.tsx` の body overflow 直接操作 useEffect（`useScrollLock` と機能重複）→ 削除済み
@@ -133,6 +133,6 @@
 
 1. `styles.monthPick`（定義なしクラス）は削除でよいか、それとも見た目の意図があったか
 2. Activity の tick が 250ms なのは意図的か（他は 1000ms）
-3. `@` エイリアスと `Store.reload` は消してよいか
+3. ~~`@` エイリアスと `Store.reload` は消してよいか~~ → 両方削除済み
 4. LogScreen のピッカーにも閉じアニメーションを付けるか
 5. CORS はいつ絞るか（本番URL確定時か）

@@ -3,6 +3,7 @@ import {
   EventEditModal,
   type EventFormSeed,
 } from '../components/EventEditModal'
+import { ErrorBanner } from '../components/ErrorBanner'
 import { FolderIcon } from '../components/FolderIcon'
 import chrome from '../components/screenChrome.module.css'
 import {
@@ -16,6 +17,7 @@ import {
 import { useNowTick } from '../lib/useNowTick'
 import { useStoreActions, useStoreBusy, useStoreData } from '../state/Store'
 import type { Event } from '../types'
+import { resolveDisplay } from './log/aggregate'
 import styles from './ActivityScreen.module.css'
 
 const PAGE = 50
@@ -114,20 +116,12 @@ export function ActivityScreen() {
 
   const pageEvents = useMemo(() => events.slice(0, visible), [events, visible])
 
-  // 色だけはスナップショットでなく ID で最新のマスタ色を使う（調整が多いため）
+  // 色・名前はスナップショットでなく ID で最新マスタを使う（Log の resolveDisplay と同一）
   const taskById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
   const folderById = useMemo(
     () => new Map(folders.map((f) => [f.id, f])),
     [folders],
   )
-  const liveColors = (ev: Event) => {
-    const task = taskById.get(ev.taskId)
-    const folder = folderById.get(task?.folderId ?? ev.folderId)
-    return {
-      taskColor: task?.color ?? ev.taskColor,
-      folderColor: folder?.color ?? ev.folderColor,
-    }
-  }
 
   const groups = useMemo(() => {
     const map = new Map<string, DayGroup>()
@@ -195,14 +189,7 @@ export function ActivityScreen() {
 
   return (
     <section className={styles.root}>
-      {error && (
-        <div className={chrome.error} role="alert">
-          <span>{error}</span>
-          <button type="button" onClick={clearError}>
-            閉じる
-          </button>
-        </div>
-      )}
+      {error && <ErrorBanner message={error} onDismiss={clearError} />}
 
       {events.length === 0 ? (
         <p className={chrome.status}>まだ記録がありません。</p>
@@ -217,7 +204,7 @@ export function ActivityScreen() {
               </div>
               <ul className={styles.list}>
                 {g.events.map((ev) => {
-                  const colors = liveColors(ev)
+                  const display = resolveDisplay(ev, taskById, folderById)
                   return (
                     <li key={ev.id}>
                       <button
@@ -230,20 +217,20 @@ export function ActivityScreen() {
                           <div className={styles.titleLine}>
                             <span
                               className={chrome.swatch}
-                              style={{ background: colors.taskColor }}
+                              style={{ background: display.taskColor }}
                               aria-hidden
                             />
                             <span className={styles.taskName}>
-                              {ev.taskName}
+                              {display.taskName}
                             </span>
                             <span className={styles.folderMark} aria-hidden>
                               <FolderIcon
-                                color={colors.folderColor}
+                                color={display.folderColor}
                                 size={14}
                               />
                             </span>
                             <span className={styles.folderName}>
-                              {ev.folderName}
+                              {display.folderName}
                             </span>
                           </div>
                           <div className={styles.meta}>

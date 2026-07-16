@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ErrorBanner } from '../../components/ErrorBanner'
 import { EventEditModal } from '../../components/EventEditModal'
 import { FolderIcon } from '../../components/FolderIcon'
 import chrome from '../../components/screenChrome.module.css'
@@ -163,14 +164,7 @@ export function LogScreen() {
 
   return (
     <section className={styles.root}>
-      {error && (
-        <div className={chrome.error} role="alert">
-          <span>{error}</span>
-          <button type="button" onClick={clearError}>
-            閉じる
-          </button>
-        </div>
-      )}
+      {error && <ErrorBanner message={error} onDismiss={clearError} />}
 
       <div className={styles.periodTabs} ref={periodTabsRef}>
         {(

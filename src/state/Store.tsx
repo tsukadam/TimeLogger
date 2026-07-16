@@ -34,7 +34,6 @@ type StoreData = {
 
 type StoreActions = {
   clearError: () => void
-  reload: () => Promise<void>
   saveLogPrefs: (prefs: LogPrefs) => Promise<void>
   addFolder: (name: string, color: string) => Promise<void>
   addTask: (folderId: string, name: string, color: string) => Promise<void>
@@ -67,11 +66,6 @@ type StoreActions = {
   stopCurrent: () => Promise<void>
 }
 
-type StoreValue = StoreData &
-  StoreActions & {
-    busy: boolean
-  }
-
 const BusyContext = createContext(false)
 const DataContext = createContext<StoreData | null>(null)
 const ActionsContext = createContext<StoreActions | null>(null)
@@ -92,28 +86,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const clearError = useCallback(() => setError(null), [])
 
-  const reload = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const [tasks, events, settings] = await Promise.all([
-        fetchResource('tasks'),
-        fetchResource('events'),
-        fetchResource('settings'),
-      ])
-      setTasksFile(tasks)
-      setEventsFile(events)
-      setSettingsFile(settings)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '読み込みに失敗しました')
-    } finally {
-      setLoading(false)
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const [tasks, events, settings] = await Promise.all([
+          fetchResource('tasks'),
+          fetchResource('events'),
+          fetchResource('settings'),
+        ])
+        if (cancelled) return
+        setTasksFile(tasks)
+        setEventsFile(events)
+        setSettingsFile(settings)
+      } catch (e) {
+        if (cancelled) return
+        setError(e instanceof Error ? e.message : '読み込みに失敗しました')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
     }
   }, [])
-
-  useEffect(() => {
-    void reload()
-  }, [reload])
 
   const runWrite = useCallback(async (fn: () => Promise<void>) => {
     setBusy(true)
@@ -600,7 +598,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const actions = useMemo<StoreActions>(
     () => ({
       clearError,
-      reload,
       saveLogPrefs,
       addFolder,
       addTask,
@@ -617,7 +614,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }),
     [
       clearError,
-      reload,
       saveLogPrefs,
       addFolder,
       addTask,
@@ -658,15 +654,4 @@ export function useStoreActions(): StoreActions {
   const ctx = useContext(ActionsContext)
   if (!ctx) throw new Error('StoreProvider missing')
   return ctx
-}
-
-/** 互換: busy / data / actions をすべて購読 */
-export function useStore(): StoreValue {
-  const busy = useStoreBusy()
-  const data = useStoreData()
-  const actions = useStoreActions()
-  return useMemo(
-    () => ({ busy, ...data, ...actions }),
-    [busy, data, actions],
-  )
 }

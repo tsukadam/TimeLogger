@@ -1,9 +1,14 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { ErrorBanner } from '../components/ErrorBanner'
 import { FolderIcon } from '../components/FolderIcon'
 import { FolderSelect } from '../components/FolderSelect'
 import { Modal } from '../components/Modal'
 import { Spinner } from '../components/Spinner'
 import spinnerStyles from '../components/Spinner.module.css'
+import {
+  TaskColorPicker,
+  type PalettePos,
+} from '../components/TaskColorPicker'
 import form from '../components/form.module.css'
 import chrome from '../components/screenChrome.module.css'
 import { FOLDER_PALETTE, TASK_BASE_CELL, findTaskColorPos, taskColorGrid } from '../lib/color'
@@ -23,9 +28,6 @@ import type { Folder, Task } from '../types'
 import styles from './TasksScreen.module.css'
 
 type AddTarget = 'folder' | 'task'
-type PalettePos =
-  | { kind: 'task'; row: number; col: number }
-  | { kind: 'folder'; index: number }
 
 type Sheet =
   | { type: 'closed' }
@@ -34,48 +36,6 @@ type Sheet =
   | { type: 'add-task-in'; folderId: string }
   | { type: 'edit-folder'; id: string }
   | { type: 'edit-task'; id: string }
-
-function ColorPickerButton({
-  fill,
-  selected,
-  onPick,
-}: {
-  fill: string | null
-  selected: boolean
-  onPick: (c: string) => void
-}) {
-  const filled = fill !== null && /^#[0-9a-fA-F]{6}$/.test(fill)
-  return (
-    <label
-      className={[
-        styles.pickerWrap,
-        filled ? styles.pickerFilled : styles.pickerEmpty,
-        selected ? styles.colorActive : '',
-      ]
-        .filter(Boolean)
-        .join(' ')}
-      title="自由に選ぶ"
-      style={filled ? { background: fill } : undefined}
-      onPointerDown={() => {
-        if (fill) onPick(fill)
-      }}
-    >
-      <span
-        className={filled ? styles.pickerFaceOnColor : styles.pickerFace}
-        aria-hidden
-      >
-        ＋
-      </span>
-      <input
-        type="color"
-        className={styles.pickerInput}
-        value={filled ? fill : '#e08a3c'}
-        onChange={(e) => onPick(e.target.value)}
-        aria-label="カラーピッカー"
-      />
-    </label>
-  )
-}
 
 export function TasksScreen() {
   const busy = useStoreBusy()
@@ -392,14 +352,7 @@ export function TasksScreen() {
 
   return (
     <section className={styles.root} ref={rootRef}>
-      {error && (
-        <div className={chrome.error} role="alert">
-          <span>{error}</span>
-          <button type="button" onClick={clearError}>
-            閉じる
-          </button>
-        </div>
-      )}
+      {error && <ErrorBanner message={error} onDismiss={clearError} />}
 
       {runningOff === 'above' && (
         <div className={styles.stickyTop}>
@@ -650,93 +603,15 @@ export function TasksScreen() {
 
               <div className={form.field}>
                 <span>色</span>
-                {addTarget === 'folder' ? (
-                  <div className={styles.colors}>
-                    {FOLDER_PALETTE.map((c, index) => {
-                      const selected =
-                        colorFrom === 'palette' &&
-                        palettePos?.kind === 'folder' &&
-                        palettePos.index === index
-                      return (
-                        <button
-                          key={c}
-                          type="button"
-                          className={
-                            selected ? styles.colorActive : styles.color
-                          }
-                          style={{ background: c }}
-                          aria-label={c}
-                          onClick={() =>
-                            selectPaletteColor(c, { kind: 'folder', index })
-                          }
-                        />
-                      )
-                    })}
-                    <ColorPickerButton
-                      fill={pickerFill}
-                      selected={colorFrom === 'picker'}
-                      onPick={pickCustomColor}
-                    />
-                  </div>
-                ) : (
-                  taskGrid && (
-                    <div className={styles.colorGridWrap}>
-                      <div
-                        className={styles.colorGrid}
-                        role="listbox"
-                        aria-label="タスク色"
-                      >
-                        {taskGrid.flatMap((row, ri) =>
-                          row.map((c, ci) => {
-                            const isBase =
-                              ri === TASK_BASE_CELL.row &&
-                              ci === TASK_BASE_CELL.col
-                            const selected =
-                              colorFrom === 'palette' &&
-                              palettePos?.kind === 'task' &&
-                              palettePos.row === ri &&
-                              palettePos.col === ci
-                            return (
-                              <button
-                                key={`${ri}-${ci}-${c}`}
-                                type="button"
-                                role="option"
-                                aria-selected={selected}
-                                aria-label={isBase ? `フォルダ色 ${c}` : c}
-                                className={
-                                  selected
-                                    ? `${styles.colorActive} ${styles.colorSwatch}`
-                                    : styles.colorSwatch
-                                }
-                                style={{ background: c }}
-                                onClick={() =>
-                                  selectPaletteColor(c, {
-                                    kind: 'task',
-                                    row: ri,
-                                    col: ci,
-                                  })
-                                }
-                              >
-                                {isBase && (
-                                  <FolderIcon
-                                    color="#fff"
-                                    size={14}
-                                    className={styles.baseFolderMark}
-                                  />
-                                )}
-                              </button>
-                            )
-                          }),
-                        )}
-                      </div>
-                      <ColorPickerButton
-                        fill={pickerFill}
-                        selected={colorFrom === 'picker'}
-                        onPick={pickCustomColor}
-                      />
-                    </div>
-                  )
-                )}
+                <TaskColorPicker
+                  mode={addTarget}
+                  colorFrom={colorFrom}
+                  palettePos={palettePos}
+                  pickerFill={pickerFill}
+                  taskGrid={taskGrid}
+                  onSelectPalette={selectPaletteColor}
+                  onPickCustom={pickCustomColor}
+                />
               </div>
 
               <div className={form.sheetActions}>
