@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useTabIndicator } from './lib/useTabIndicator'
 import { StoreProvider } from './state/Store'
 import { ActivityScreen } from './screens/ActivityScreen'
 import { LogScreen } from './screens/LogScreen'
@@ -136,26 +137,6 @@ function RefreshableScroll({
       </div>
     </div>
   )
-}
-
-/** アクティブなタブボタンの位置へオレンジバーをスライドさせる */
-function useTabIndicator(activeKey: string) {
-  const wrapRef = useRef<HTMLDivElement | null>(null)
-  const [ind, setInd] = useState<{ left: number; width: number } | null>(null)
-
-  useLayoutEffect(() => {
-    const measure = () => {
-      const el = wrapRef.current?.querySelector<HTMLElement>(
-        `button[data-tab="${activeKey}"]`,
-      )
-      if (el) setInd({ left: el.offsetLeft, width: el.offsetWidth })
-    }
-    measure()
-    window.addEventListener('resize', measure)
-    return () => window.removeEventListener('resize', measure)
-  }, [activeKey])
-
-  return { wrapRef, ind }
 }
 
 export default function App() {

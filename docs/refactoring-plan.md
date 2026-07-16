@@ -81,7 +81,7 @@
 
 1,550 行を機能単位に分割。ロジックは動かさず、ファイルを移すだけに徹する。
 
-- [ ] `src/screens/log/` ディレクトリを作り、以下に分割:
+- [x] `src/screens/log/` ディレクトリを作り、以下に分割:
   - `types.ts` — AppliedRange / Slice / Seg / Column / TotalCol
   - `prefs.ts` — makeDefaultPrefs / normalizePrefs / buildApplied
   - `aggregate.ts` — resolveDisplay / clipSegs ＋ 集計 useMemo の中身（180行）を純関数化
@@ -90,7 +90,7 @@
   - `LogScreen.tsx` — 本体（state と組み立てのみに痩せる）
 - [ ] IndividualChart と TotalsChart の積み上げ棒 JSX（ほぼコピー）を共通の `StackBars` に
 - [ ] Tasks / Genres の円グラフ＋テーブル×2（JSX ほぼコピー）を共通コンポーネントに
-- [ ] LogScreen 内タブインジケーター（`useTabIndicator` の再実装）→ App.tsx のフックを `lib/` に出して共用
+- [x] LogScreen 内タブインジケーター（`useTabIndicator` の再実装）→ App.tsx のフックを `lib/` に出して共用
 - [ ] LogScreen のピッカーにも他モーダルと同じ閉じアニメーションを付けるか要確認（現状 Log だけ無い）
 
 ## Phase 7: Store の整理（リスク: 中）
