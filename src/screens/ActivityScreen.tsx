@@ -228,7 +228,7 @@ export function ActivityScreen() {
                         <div className={styles.main}>
                           <div className={styles.titleLine}>
                             <span
-                              className={styles.swatch}
+                              className={chrome.swatch}
                               style={{ background: colors.taskColor }}
                               aria-hidden
                             />

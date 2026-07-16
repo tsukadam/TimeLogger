@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { MonthCalendar } from '../../components/MonthCalendar'
 import calStyles from '../../components/MonthCalendar.module.css'
+import { MODAL_CLOSE_MS } from '../../components/Modal'
+import form from '../../components/form.module.css'
 import {
   formatYmd,
   monthKey,
@@ -10,7 +12,6 @@ import {
 } from '../../lib/time'
 import { useScrollLock } from '../../lib/useScrollLock'
 import type { LogPrefs } from '../../types'
-import form from '../../components/form.module.css'
 import styles from '../LogScreen.module.css'
 
 const MONTH_NAMES = [
@@ -74,10 +75,19 @@ export function RangePicker({
   onClose: () => void
   onPersist: (next: LogPrefs) => void
 }) {
+  const [closing, setClosing] = useState(false)
   useScrollLock(true)
   const [draft, setDraft] = useState(() => initDraft(prefs, today))
   const [customTarget, setCustomTarget] = useState<'start' | 'end'>('start')
   const [viewYm, setViewYm] = useState(() => initViewYm(prefs, today))
+
+  const requestClose = useCallback(() => {
+    if (closing) return
+    setClosing(true)
+    window.setTimeout(() => {
+      onClose()
+    }, MODAL_CLOSE_MS)
+  }, [closing, onClose])
 
   const applyPicker = () => {
     let next = { ...draft }
@@ -97,17 +107,21 @@ export function RangePicker({
         customApplied: { start: a, end: b },
       }
     }
-    onClose()
     onPersist(next)
+    requestClose()
   }
 
   return createPortal(
-    <div className={styles.modalRoot}>
+    <div
+      className={
+        closing ? `${styles.modalRoot} ${styles.modalClosing}` : styles.modalRoot
+      }
+    >
       <button
         type="button"
         className={styles.modalBackdrop}
         aria-label="閉じる"
-        onClick={onClose}
+        onClick={requestClose}
       />
       <div
         className={styles.sheet}
@@ -174,8 +188,8 @@ export function RangePicker({
               if (draft.kind === 'day') {
                 setDraft({ ...draft, day: d })
                 setViewYm(ymParts(d))
-                onClose()
                 onPersist({ ...prefs, day: d })
+                requestClose()
               } else if (draft.kind === 'week') {
                 setDraft({ ...draft, weekStart: d })
                 setViewYm(ymParts(d))

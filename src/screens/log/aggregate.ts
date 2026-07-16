@@ -12,10 +12,44 @@ import type { AppliedRange, Column, Seg, Slice, TotalCol } from './types'
 // Month サマリーで表示する日付ラベル（全日表示だと重なるため）
 const MONTH_LABEL_DAYS = [1, 5, 10, 15, 20, 25, 30]
 
-export function resolveDisplay(ev: Event, tasks: Task[], folders: Folder[]) {
-  const task = tasks.find((t) => t.id === ev.taskId)
+export type DisplayInfo = {
+  taskId: string
+  folderId: string
+  taskName: string
+  taskColor: string
+  folderName: string
+  folderColor: string
+}
+
+type PreparedEvent = {
+  ev: Event
+  startMs: number
+  endMs: number
+  display: DisplayInfo
+}
+
+function toTaskMap(tasks: Task[]): Map<string, Task> {
+  return new Map(tasks.map((t) => [t.id, t]))
+}
+
+function toFolderMap(folders: Folder[]): Map<string, Folder> {
+  return new Map(folders.map((f) => [f.id, f]))
+}
+
+export function resolveDisplay(
+  ev: Event,
+  tasks: Task[] | Map<string, Task>,
+  folders: Folder[] | Map<string, Folder>,
+): DisplayInfo {
+  const task =
+    tasks instanceof Map
+      ? tasks.get(ev.taskId)
+      : tasks.find((t) => t.id === ev.taskId)
   const folderId = task?.folderId ?? ev.folderId
-  const folder = folders.find((f) => f.id === folderId)
+  const folder =
+    folders instanceof Map
+      ? folders.get(folderId)
+      : folders.find((f) => f.id === folderId)
   return {
     taskId: ev.taskId,
     folderId,
@@ -26,26 +60,36 @@ export function resolveDisplay(ev: Event, tasks: Task[], folders: Folder[]) {
   }
 }
 
-function clipSegs(
+function prepareEvents(
   events: Event[],
   tasks: Task[],
   folders: Folder[],
+  nowMs: number,
+): PreparedEvent[] {
+  const taskMap = toTaskMap(tasks)
+  const folderMap = toFolderMap(folders)
+  return events.map((ev) => ({
+    ev,
+    startMs: new Date(ev.startedAt).getTime(),
+    endMs: ev.endedAt ? new Date(ev.endedAt).getTime() : nowMs,
+    display: resolveDisplay(ev, taskMap, folderMap),
+  }))
+}
+
+function clipSegs(
+  prepared: PreparedEvent[],
   colStart: number,
   colEnd: number,
-  nowMs: number,
 ): Seg[] {
   const out: Seg[] = []
-  for (const ev of events) {
-    const s = new Date(ev.startedAt).getTime()
-    const e = ev.endedAt ? new Date(ev.endedAt).getTime() : nowMs
-    const a = Math.max(s, colStart)
-    const b = Math.min(e, colEnd)
+  for (const p of prepared) {
+    const a = Math.max(p.startMs, colStart)
+    const b = Math.min(p.endMs, colEnd)
     if (!(b > a)) continue
-    const d = resolveDisplay(ev, tasks, folders)
     out.push({
-      eventId: ev.id,
-      color: d.taskColor,
-      name: d.taskName,
+      eventId: p.ev.id,
+      color: p.display.taskColor,
+      name: p.display.taskName,
       start: a,
       end: b,
     })
@@ -76,23 +120,23 @@ export function aggregateLogData(args: {
 }): AggregateLogData {
   const { applied, events, tasks, folders, now, sumMode } = args
   const { start, end, kind: k } = applied
+  const prepared = prepareEvents(events, tasks, folders, now)
+
   const byTask = new Map<string, Slice>()
   const byFolder = new Map<string, Slice>()
   // 期間内で最初に記録された時刻（円グラフの並び順用）
   const firstByTask = new Map<string, number>()
   const firstByFolder = new Map<string, number>()
-  const dayEvents: Event[] = []
+  const dayPrepared: PreparedEvent[] = []
 
-  for (const ev of events) {
-    const s = new Date(ev.startedAt).getTime()
-    const e = ev.endedAt ? new Date(ev.endedAt).getTime() : now
-    const a = Math.max(s, start)
-    const b = Math.min(e, end)
+  for (const p of prepared) {
+    const a = Math.max(p.startMs, start)
+    const b = Math.min(p.endMs, end)
     if (!(b > a)) continue
-    if (k === 'day') dayEvents.push(ev)
+    if (k === 'day') dayPrepared.push(p)
     const sec = Math.floor((b - a) / 1000)
     if (sec <= 0) continue
-    const d = resolveDisplay(ev, tasks, folders)
+    const d = p.display
 
     const t = byTask.get(d.taskId)
     if (t) t.sec += sec
@@ -120,11 +164,8 @@ export function aggregateLogData(args: {
     )
   }
 
-  dayEvents.sort(
-    (a, b) =>
-      new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime(),
-  )
-
+  dayPrepared.sort((a, b) => a.startMs - b.startMs)
+  const dayEvents = dayPrepared.map((p) => p.ev)
   const taskSlices = [...byTask.values()].sort((a, b) => b.sec - a.sec)
   const folderSlices = [...byFolder.values()].sort((a, b) => b.sec - a.sec)
   // 円グラフは初出現順（細かいパイが固まりにくく、ラベル重なりを緩和）
@@ -149,7 +190,7 @@ export function aggregateLogData(args: {
         label: '',
         start,
         end,
-        segs: clipSegs(events, tasks, folders, start, end, now),
+        segs: clipSegs(prepared, start, end),
       },
     ]
   } else if (k === 'year') {
@@ -164,7 +205,7 @@ export function aggregateLogData(args: {
         label: String(Number(csKey.slice(5, 7))),
         start: cs,
         end: ce,
-        segs: clipSegs(events, tasks, folders, cs, ce, now),
+        segs: clipSegs(prepared, cs, ce),
       })
     }
   } else if (k === 'week' || k === 'month') {
@@ -186,7 +227,7 @@ export function aggregateLogData(args: {
             : String(dayNum),
         start: cs,
         end: ce,
-        segs: clipSegs(events, tasks, folders, cs, ce, now),
+        segs: clipSegs(prepared, cs, ce),
       })
       cursor = addDaysKey(cursor, 1)
     }
@@ -198,15 +239,13 @@ export function aggregateLogData(args: {
   if (sumMode === 'genres' && (k === 'week' || k === 'month' || k === 'year')) {
     totalColumns = columns.map((col) => {
       const m = new Map<string, Slice>()
-      for (const ev of events) {
-        const s = new Date(ev.startedAt).getTime()
-        const e = ev.endedAt ? new Date(ev.endedAt).getTime() : now
-        const a = Math.max(s, col.start)
-        const b = Math.min(e, col.end)
+      for (const p of prepared) {
+        const a = Math.max(p.startMs, col.start)
+        const b = Math.min(p.endMs, col.end)
         if (!(b > a)) continue
         const sec = Math.floor((b - a) / 1000)
         if (sec <= 0) continue
-        const d = resolveDisplay(ev, tasks, folders)
+        const d = p.display
         const cur = m.get(d.folderId)
         if (cur) cur.sec += sec
         else

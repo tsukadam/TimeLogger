@@ -60,7 +60,7 @@
 - [x] 適用先: TasksScreen（wide=520px）、ActivityScreen、EventEditModal（LogScreen のピッカーは Phase 6）
 - [x] 閉じアニメ時間 160ms → `MODAL_CLOSE_MS` 定数に一本化（CSS は 0.16s のまま同期）
 - [x] 共通フォーム系 CSS → `form.module.css`（`.field` / `.sheetActions` / `.primary` / `.danger` / `.formError` / `.dateTimeRow` / `.sheetTitle`）
-- [x] `.error` バナー / `.addBar`+`.plus` / `.status` / 丸スウォッチ（4定義）などの完全一致 CSS も共通モジュールへ（次のついでで可）→ `.error` / `.status` / `.addBar`+`.plus` を `screenChrome.module.css` に集約（スウォッチは未）
+- [x] `.error` バナー / `.addBar`+`.plus` / `.status` / 丸スウォッチ（4定義）などの完全一致 CSS も共通モジュールへ（次のついでで可）→ `screenChrome.module.css` に集約（Select は `composes`）
 
 ## Phase 4: カレンダーの一本化（リスク: 中）
 
@@ -91,7 +91,7 @@
 - [x] IndividualChart と TotalsChart の積み上げ棒 JSX（ほぼコピー）を共通の `StackBars` に
 - [x] Tasks / Genres の円グラフ＋テーブル×2（JSX ほぼコピー）を共通コンポーネントに
 - [x] LogScreen 内タブインジケーター（`useTabIndicator` の再実装）→ App.tsx のフックを `lib/` に出して共用
-- [ ] LogScreen のピッカーにも他モーダルと同じ閉じアニメーションを付けるか要確認（現状 Log だけ無い）
+- [x] LogScreen のピッカーにも他モーダルと同じ閉じアニメーションを付けるか要確認（現状 Log だけ無い）→ RangePicker に閉じアニメ追加（`MODAL_CLOSE_MS`）
 
 ## Phase 7: Store の整理（リスク: 中）
 

@@ -516,7 +516,7 @@ export function TasksScreen() {
                     onClick={() => openEditTask(task)}
                   >
                     <span
-                      className={styles.swatchDot}
+                      className={chrome.swatch}
                       style={{ background: task.color }}
                       aria-hidden
                     />

@@ -241,13 +241,6 @@
   color: inherit;
 }
 
-.swatchDot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  flex-shrink: 0;
-}
-
 .taskBody {
   min-width: 0;
   flex: 1;

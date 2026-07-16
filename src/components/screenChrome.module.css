@@ -1,4 +1,4 @@
-/* 各画面共通のエラーバナー・ステータス・下部＋バー */
+/* 各画面共通のエラーバナー・ステータス・下部＋バー・色丸 */
 
 .status {
   margin: 0;
@@ -64,4 +64,11 @@
 
 .plus:disabled {
   opacity: 0.45;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
 }
