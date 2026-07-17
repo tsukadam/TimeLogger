@@ -47,7 +47,14 @@ export function StackBars({
           {columns.map((col) => (
             <div key={col.key} className={styles.stackCol}>
               <div className={styles.stackBar}>
-                <div className={styles.fillStill}>
+                {/* 色セグメント層自体を clip-path で下から見せる（覆いマスク無し） */}
+                <div
+                  className={
+                    draw
+                      ? `${styles.fillStill} ${styles.fillRevealY}`
+                      : styles.fillStill
+                  }
+                >
                   {draw &&
                     col.segs.map((s) => (
                       <button
@@ -67,8 +74,6 @@ export function StackBars({
                       />
                     ))}
                 </div>
-                {/* 完成形をマスクで隠し、下から上へ縮めて見せる */}
-                {draw && <div className={styles.revealY} aria-hidden />}
               </div>
               <span className={styles.stackLabel}>{col.label}</span>
             </div>

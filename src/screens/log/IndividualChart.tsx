@@ -55,7 +55,14 @@ export function IndividualChart({
           return (
             <div key={h.key} className={styles.dayHalf}>
               <div className={styles.dayTrackBar}>
-                <div className={styles.fillStill}>
+                {/* 色セグメント層自体を clip-path で左から見せる（覆いマスク無し） */}
+                <div
+                  className={
+                    draw
+                      ? `${styles.fillStill} ${styles.fillRevealX}`
+                      : styles.fillStill
+                  }
+                >
                   {draw &&
                     segs.map((s) => (
                       <button
@@ -72,8 +79,6 @@ export function IndividualChart({
                       />
                     ))}
                 </div>
-                {/* 完成形をマスクで隠し、左から右へ縮めて見せる */}
-                {draw && <div className={styles.revealX} aria-hidden />}
               </div>
               <div className={styles.dayTicks}>
                 {h.ticks.map((t) => (
