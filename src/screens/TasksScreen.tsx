@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { MouseEvent, PointerEvent } from 'react'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { FolderIcon } from '../components/FolderIcon'
 import { FolderSelect } from '../components/FolderSelect'
@@ -37,6 +38,49 @@ type Sheet =
   | { type: 'edit-folder'; id: string }
   | { type: 'edit-task'; id: string }
 
+type TaskDrag = {
+  folderId: string
+  taskId: string
+  order: string[]
+}
+
+const LONG_PRESS_MS = 420
+const PRESS_MOVE_CANCEL_PX = 10
+
+/**
+ * ポインタ位置からドロップ先スロットを決める。
+ * FLIP アニメ中の transform に左右されないよう、getBoundingClientRect ではなく
+ * offsetTop（transform 非依存の静的レイアウト位置）でスロット範囲を判定する。
+ */
+function reorderIdsByClientY(
+  order: string[],
+  taskId: string,
+  clientY: number,
+  listEl: HTMLElement,
+): string[] {
+  const rows = [
+    ...listEl.querySelectorAll<HTMLElement>(':scope > [data-task-id]'),
+  ]
+  if (rows.length === 0) return order
+  // offsetTop は positioned 祖先基準なので、先頭行を 0 とする相対値に直す
+  const base = rows[0]!.offsetTop
+  const y = clientY - listEl.getBoundingClientRect().top
+  let target = rows.length - 1
+  for (let i = 0; i < rows.length; i++) {
+    const el = rows[i]!
+    if (y < el.offsetTop - base + el.offsetHeight) {
+      target = i
+      break
+    }
+  }
+  const from = order.indexOf(taskId)
+  if (from < 0 || from === target) return order
+  const next = [...order]
+  next.splice(from, 1)
+  next.splice(target, 0, taskId)
+  return next
+}
+
 export function TasksScreen() {
   const busy = useStoreBusy()
   const { loading, error, folders, tasks, events, current } = useStoreData()
@@ -46,6 +90,7 @@ export function TasksScreen() {
     addTask,
     updateFolder,
     moveFolder,
+    reorderTasks,
     updateTask,
     startTask,
     stopCurrent,
@@ -70,7 +115,15 @@ export function TasksScreen() {
   const [pendingSheet, setPendingSheet] = useState<'save' | 'delete' | null>(
     null,
   )
+  const [taskDrag, setTaskDrag] = useState<TaskDrag | null>(null)
+  const [dragPulseId, setDragPulseId] = useState<string | null>(null)
   const requestCloseRef = useRef<() => void>(() => {})
+  const taskDragRef = useRef<TaskDrag | null>(null)
+  const pressTimerRef = useRef<number | null>(null)
+  const pressOriginRef = useRef<{ x: number; y: number } | null>(null)
+  const suppressTaskClickRef = useRef(false)
+  const dragListRef = useRef<HTMLElement | null>(null)
+  const dragStartOrderRef = useRef<string[] | null>(null)
 
   const sheetOpen = sheet.type !== 'closed'
   const isEdit = sheet.type === 'edit-folder' || sheet.type === 'edit-task'
@@ -144,6 +197,158 @@ export function TasksScreen() {
     })
     folderTopsRef.current = next
   }, [folders])
+
+  // タスク並び替え中の FLIP（ドラッグ中の行自体は動かさない）
+  const taskTopsRef = useRef<Map<string, number>>(new Map())
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+    const prev = taskTopsRef.current
+    const next = new Map<string, number>()
+    root.querySelectorAll<HTMLElement>('[data-task-id]').forEach((el) => {
+      const id = el.dataset.taskId
+      if (!id) return
+      const top = el.offsetTop
+      next.set(id, top)
+      if (taskDragRef.current?.taskId === id) return
+      const old = prev.get(id)
+      if (old !== undefined && Math.abs(old - top) > 1) {
+        el.animate(
+          [{ transform: `translateY(${old - top}px)` }, { transform: 'none' }],
+          { duration: 180, easing: 'ease' },
+        )
+      }
+    })
+    taskTopsRef.current = next
+  }, [tasks, taskDrag])
+
+  function clearPressTimer() {
+    if (pressTimerRef.current !== null) {
+      window.clearTimeout(pressTimerRef.current)
+      pressTimerRef.current = null
+    }
+    pressOriginRef.current = null
+  }
+
+  function finishTaskDrag(commit: boolean) {
+    const drag = taskDragRef.current
+    const start = dragStartOrderRef.current
+    clearPressTimer()
+    dragListRef.current = null
+    dragStartOrderRef.current = null
+    setDragPulseId(null)
+    if (!commit || !drag || !start) {
+      taskDragRef.current = null
+      setTaskDrag(null)
+      return
+    }
+    const changed = drag.order.some((id, i) => id !== start[i])
+    if (!changed) {
+      taskDragRef.current = null
+      setTaskDrag(null)
+      return
+    }
+    void (async () => {
+      try {
+        await reorderTasks(drag.folderId, drag.order)
+      } catch {
+        /* Store が表示 */
+      } finally {
+        taskDragRef.current = null
+        setTaskDrag(null)
+      }
+    })()
+  }
+
+  function beginTaskDrag(
+    folderId: string,
+    taskId: string,
+    order: string[],
+    listEl: HTMLElement,
+  ) {
+    const drag: TaskDrag = { folderId, taskId, order: [...order] }
+    taskDragRef.current = drag
+    dragListRef.current = listEl
+    dragStartOrderRef.current = [...order]
+    suppressTaskClickRef.current = true
+    setTaskDrag(drag)
+    setDragPulseId(taskId)
+    window.setTimeout(() => {
+      setDragPulseId((cur) => (cur === taskId ? null : cur))
+    }, 300)
+    try {
+      navigator.vibrate?.(14)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function onTaskCardPointerDown(
+    e: PointerEvent<HTMLButtonElement>,
+    folderId: string,
+    taskId: string,
+    order: string[],
+    listEl: HTMLUListElement | null,
+  ) {
+    if (busy || e.button !== 0 || order.length < 2 || !listEl) return
+    if (taskDragRef.current) return
+    clearPressTimer()
+    pressOriginRef.current = { x: e.clientX, y: e.clientY }
+    const pointerId = e.pointerId
+    const target = e.currentTarget
+    pressTimerRef.current = window.setTimeout(() => {
+      pressTimerRef.current = null
+      beginTaskDrag(folderId, taskId, order, listEl)
+      try {
+        target.setPointerCapture(pointerId)
+      } catch {
+        /* ignore */
+      }
+    }, LONG_PRESS_MS)
+  }
+
+  function onTaskCardPointerMove(e: PointerEvent<HTMLButtonElement>) {
+    const origin = pressOriginRef.current
+    if (pressTimerRef.current !== null && origin) {
+      const dx = e.clientX - origin.x
+      const dy = e.clientY - origin.y
+      if (dx * dx + dy * dy > PRESS_MOVE_CANCEL_PX * PRESS_MOVE_CANCEL_PX) {
+        clearPressTimer()
+      }
+      return
+    }
+    const drag = taskDragRef.current
+    const listEl = dragListRef.current
+    if (!drag || !listEl) return
+    e.preventDefault()
+    const nextOrder = reorderIdsByClientY(
+      drag.order,
+      drag.taskId,
+      e.clientY,
+      listEl,
+    )
+    if (nextOrder === drag.order) return
+    const next = { ...drag, order: nextOrder }
+    taskDragRef.current = next
+    setTaskDrag(next)
+  }
+
+  function onTaskCardPointerUp() {
+    if (taskDragRef.current) {
+      finishTaskDrag(true)
+      return
+    }
+    clearPressTimer()
+  }
+
+  function onTaskCardClick(task: Task, e: MouseEvent<HTMLButtonElement>) {
+    if (suppressTaskClickRef.current) {
+      e.preventDefault()
+      suppressTaskClickRef.current = false
+      return
+    }
+    openEditTask(task)
+  }
 
   // 記録中タスクが画面外にあるとき、上下どちらにあるかを示す
   const runningTaskId = current?.taskId ?? null
@@ -415,19 +620,44 @@ export function TasksScreen() {
               ＋
             </button>
           )}
-          <ul className={styles.taskList}>
-            {folderTasks.map((task) => {
+          <ul
+            className={`${styles.taskList}${
+              taskDrag?.folderId === folder.id ? ` ${styles.taskListDragging}` : ''
+            }`}
+            ref={(el) => {
+              if (taskDrag?.folderId === folder.id) dragListRef.current = el
+            }}
+          >
+            {(taskDrag?.folderId === folder.id
+              ? taskDrag.order
+                  .map((id) => folderTasks.find((t) => t.id === id))
+                  .filter((t): t is Task => t != null)
+              : folderTasks
+            ).map((task) => {
               const running = current?.taskId === task.id
               const todaySec = todaySecByTask.get(task.id) ?? 0
               const recPending = pendingRecId === task.id
+              const dragging = taskDrag?.taskId === task.id
+              const pulsing = dragPulseId === task.id
+              const orderIds = folderTasks.map((t) => t.id)
               return (
-                <li key={task.id} className={styles.taskRow} data-task-id={task.id}>
+                <li
+                  key={task.id}
+                  className={[
+                    styles.taskRow,
+                    dragging ? styles.taskRowDragging : '',
+                    pulsing ? styles.taskRowPulse : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  data-task-id={task.id}
+                >
                   <button
                     type="button"
                     className={`${running ? styles.recStop : styles.recStart}${
                       recPending ? ` ${spinnerStyles.busyBtn}` : ''
                     }`}
-                    disabled={busy}
+                    disabled={busy || taskDrag !== null}
                     aria-label={running ? '記録停止' : '記録開始'}
                     aria-busy={recPending}
                     onClick={(e) => {
@@ -465,7 +695,25 @@ export function TasksScreen() {
                   <button
                     type="button"
                     className={styles.taskCard}
-                    onClick={() => openEditTask(task)}
+                    onPointerDown={(e) => {
+                      const list = e.currentTarget.closest('ul')
+                      onTaskCardPointerDown(
+                        e,
+                        folder.id,
+                        task.id,
+                        orderIds,
+                        list instanceof HTMLUListElement ? list : null,
+                      )
+                    }}
+                    onPointerMove={onTaskCardPointerMove}
+                    onPointerUp={onTaskCardPointerUp}
+                    onPointerCancel={onTaskCardPointerUp}
+                    onContextMenu={(e) => {
+                      if (taskDragRef.current || pressTimerRef.current !== null) {
+                        e.preventDefault()
+                      }
+                    }}
+                    onClick={(e) => onTaskCardClick(task, e)}
                   >
                     <span
                       className={chrome.swatch}
@@ -607,7 +855,7 @@ export function TasksScreen() {
                   mode={addTarget}
                   colorFrom={colorFrom}
                   palettePos={palettePos}
-                  pickerFill={pickerFill}
+                  pickerFill={color}
                   taskGrid={taskGrid}
                   onSelectPalette={selectPaletteColor}
                   onPickCustom={pickCustomColor}

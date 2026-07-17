@@ -42,6 +42,7 @@ type StoreActions = {
     patch: { name: string; color: string },
   ) => Promise<void>
   moveFolder: (folderId: string, dir: 1 | -1) => Promise<void>
+  reorderTasks: (folderId: string, orderedIds: string[]) => Promise<void>
   updateTask: (
     taskId: string,
     patch: { name: string; color: string; folderId: string },
@@ -278,6 +279,42 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           folders: sorted.map((f, idx) =>
             f.sortOrder === idx ? f : { ...f, sortOrder: idx, updatedAt: t },
           ),
+          updatedAt: t,
+        }
+        const saved = await putResource('tasks', next)
+        setTasksFile(saved)
+      })
+    },
+    [runWrite, tasksFile],
+  )
+
+  const reorderTasks = useCallback(
+    async (folderId: string, orderedIds: string[]) => {
+      if (!tasksFile) return
+      const inFolder = tasksFile.tasks
+        .filter((t) => t.folderId === folderId)
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+      if (
+        orderedIds.length !== inFolder.length ||
+        orderedIds.some((id) => !inFolder.some((t) => t.id === id))
+      ) {
+        return
+      }
+      const same = inFolder.every((t, i) => t.id === orderedIds[i])
+      if (same) return
+      await runWrite(async () => {
+        const t = nowIso()
+        const byId = new Map(inFolder.map((task) => [task.id, task]))
+        const reordered = orderedIds.map((id, idx) => {
+          const task = byId.get(id)!
+          return task.sortOrder === idx
+            ? task
+            : { ...task, sortOrder: idx, updatedAt: t }
+        })
+        const others = tasksFile.tasks.filter((task) => task.folderId !== folderId)
+        const next: TasksFile = {
+          ...tasksFile,
+          tasks: [...others, ...reordered],
           updatedAt: t,
         }
         const saved = await putResource('tasks', next)
@@ -603,6 +640,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addTask,
       updateFolder,
       moveFolder,
+      reorderTasks,
       updateTask,
       updateEvent,
       addEvent,
@@ -619,6 +657,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addTask,
       updateFolder,
       moveFolder,
+      reorderTasks,
       updateTask,
       updateEvent,
       addEvent,

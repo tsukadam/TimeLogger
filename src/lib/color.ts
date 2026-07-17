@@ -61,8 +61,8 @@ function normalizeHex(hex: string): string {
  */
 const L_LEVELS = [-2, 0, 1] as const
 const L_DELTA = 0.062
-/** 彩度: 下げ / 基準 / 上げ */
-const S_DELTAS = [-0.14, 0, 0.14] as const
+/** 彩度: 下げ / 基準 / 上げ（差を大きめにして選びやすく） */
+const S_DELTAS = [-0.45, 0, 0.45] as const
 /** 色相1段（弱め） */
 const HUE_SHIFT = 8
 const HUE_ROW_OFFSETS = [-2, -1, 0, 1, 2] as const
