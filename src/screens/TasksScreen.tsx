@@ -20,6 +20,7 @@ import {
   todayKey,
 } from '../lib/time'
 import { useNowTick } from '../lib/useNowTick'
+import { useScrollLock } from '../lib/useScrollLock'
 import {
   useStoreActions,
   useStoreBusy,
@@ -124,6 +125,18 @@ export function TasksScreen() {
   const suppressTaskClickRef = useRef(false)
   const dragListRef = useRef<HTMLElement | null>(null)
   const dragStartOrderRef = useRef<string[] | null>(null)
+
+  // ドラッグ中はページスクロールを完全に止める。
+  // touch-action の変更は進行中のジェスチャーに効かないため、
+  // 非パッシブ touchmove の preventDefault で止めるのが確実
+  const dragActive = taskDrag !== null
+  useScrollLock(dragActive)
+  useEffect(() => {
+    if (!dragActive) return
+    const prevent = (e: TouchEvent) => e.preventDefault()
+    document.addEventListener('touchmove', prevent, { passive: false })
+    return () => document.removeEventListener('touchmove', prevent)
+  }, [dragActive])
 
   const sheetOpen = sheet.type !== 'closed'
   const isEdit = sheet.type === 'edit-folder' || sheet.type === 'edit-task'
