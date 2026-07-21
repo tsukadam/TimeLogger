@@ -22,6 +22,11 @@ mkdir build\timelogger
 xcopy /e /i /y dist build\timelogger >nul
 xcopy /e /i /y api build\timelogger\api >nul
 
+REM data\ 本体は上書きしない。debug.log の空ファイルだけは毎回同梱
+REM （アプリが動く前でもサーバー上にログ先が存在する状態にする）
+if not exist build\timelogger\data mkdir build\timelogger\data
+type nul > build\timelogger\data\debug.log
+
 if /i "%~1"=="withdata" (
   xcopy /e /i /y data build\timelogger\data >nul
   echo included: data\ ^(first deploy only^)

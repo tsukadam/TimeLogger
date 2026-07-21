@@ -1,3 +1,4 @@
+<?php
 /**
  * TimeLogger API
  *
@@ -176,6 +177,15 @@ $method = $_SERVER['REQUEST_METHOD'];
 if ($resource === 'debug') {
     if ($method === 'GET') {
         withResourceLock($lockPath, LOCK_SH, static function () use ($path): void {
+            if (!is_file($path)) {
+                // 空ファイルを用意（クライアントが動く前でもログ先を確保）
+                $dir = dirname($path);
+                if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+                    echo '';
+                    return;
+                }
+                @touch($path);
+            }
             if (!is_readable($path)) {
                 echo '';
                 return;
@@ -217,14 +227,20 @@ if ($resource === 'debug') {
         if ($detailJson !== false && strlen($detailJson) > 4000) {
             $detail = ['_truncated' => true, 'preview' => substr($detailJson, 0, 500)];
         }
+        $msg = is_string($message) ? $message : '';
+        if (strlen($msg) > 500) {
+            $msg = substr($msg, 0, 500);
+        }
+        $ua = null;
+        if (isset($decoded['ua']) && is_string($decoded['ua'])) {
+            $ua = strlen($decoded['ua']) > 300 ? substr($decoded['ua'], 0, 300) : $decoded['ua'];
+        }
         $entry = [
             'at' => nowIsoMs(),
             'level' => $level,
-            'message' => mb_substr($message, 0, 500),
+            'message' => $msg,
             'detail' => $detail,
-            'ua' => isset($decoded['ua']) && is_string($decoded['ua'])
-                ? mb_substr($decoded['ua'], 0, 300)
-                : null,
+            'ua' => $ua,
         ];
         $line = json_encode($entry, JSON_UNESCAPED_UNICODE);
         if ($line === false) {
@@ -233,6 +249,13 @@ if ($resource === 'debug') {
         $line .= "\n";
 
         withResourceLock($lockPath, LOCK_EX, static function () use ($path, $line): void {
+            $dir = dirname($path);
+            if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+                fail(500, 'mkdir data failed');
+            }
+            if (!is_file($path)) {
+                @touch($path);
+            }
             trimDebugLogIfHuge($path);
             $fp = fopen($path, 'ab');
             if ($fp === false) {

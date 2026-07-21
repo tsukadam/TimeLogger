@@ -55,6 +55,18 @@ async function withRetry<T>(
   throw last
 }
 
+async function readJson<T>(res: Response): Promise<T> {
+  const text = await res.text()
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    const preview = text.slice(0, 160).replace(/\s+/g, ' ')
+    throw new Error(
+      `Invalid JSON (${res.status} ${res.url}): ${preview || '(empty)'}`,
+    )
+  }
+}
+
 function resourceUrl(resource: Resource | 'debug'): string {
   const base = API_BASE.replace(/\/$/, '')
   const sep = base.includes('?') ? '&' : '?'
@@ -65,28 +77,33 @@ export type DebugLevel = 'error' | 'warn' | 'info'
 
 /**
  * サーバーの data/debug.log へ JSONL 追記（fire-and-forget）。
- * メインの API キューには乗せない（ハング調査用なので本処理を止めない）。
+ * メインの API キューには乗せない。失敗しても本処理には影響させない。
+ *
+ * 注意: Safari は keepalive + cache:'no-store' の組み合わせを拒否し、
+ * 「The string did not match the expected pattern.」を投げることがある。
  */
 export function reportDebugLog(
   level: DebugLevel,
   message: string,
   detail?: unknown,
 ): void {
-  const body = JSON.stringify({
-    level,
-    message,
-    detail: detail ?? null,
-    ua: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-  })
-  void fetch(resourceUrl('debug'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body,
-    cache: 'no-store',
-    keepalive: true,
-  }).catch((e) => {
+  try {
+    const body = JSON.stringify({
+      level,
+      message,
+      detail: detail ?? null,
+      ua: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+    })
+    void fetch(resourceUrl('debug'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    }).catch((e) => {
+      console.error('[api] debug log failed', e)
+    })
+  } catch (e) {
     console.error('[api] debug log failed', e)
-  })
+  }
 }
 
 export async function fetchResource<K extends Resource>(
@@ -101,7 +118,7 @@ export async function fetchResource<K extends Resource>(
       if (!res.ok) {
         throw new Error(`GET ${resource} failed: ${res.status}`)
       }
-      return (await res.json()) as ResourceMap[K]
+      return await readJson<ResourceMap[K]>(res)
     }).catch((e) => {
       console.error(`[api] GET ${resource}`, e)
       reportDebugLog('error', `GET ${resource} failed`, {
@@ -128,7 +145,7 @@ export async function putResource<K extends Resource>(
         throw new Error(`PUT ${resource} failed: ${res.status} ${text}`)
       }
       // サーバーが updatedAt を付け直すので、返り値の updatedAt で揃える
-      const result = (await res.json()) as WriteResult | ApiError
+      const result = await readJson<WriteResult | ApiError>(res)
       if (!result.ok) {
         throw new Error(`PUT ${resource} rejected`)
       }
