@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { fetchResource, isOnline, putResource } from '../api/client'
+import { fetchResource, isOnline, putResource, reportDebugLog, WRITE_SLOW_MS } from '../api/client'
 import { newId } from '../lib/id'
 import { remapPaletteTaskColor } from '../lib/color'
 import { elapsedMs, MIN_RECORD_MS, nowIso } from '../lib/time'
@@ -117,14 +117,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const runWrite = useCallback(async (fn: () => Promise<void>) => {
     setBusy(true)
     setError(null)
+    const t0 = performance.now()
+    reportDebugLog('info', 'write start')
+    const slowTimer = window.setTimeout(() => {
+      reportDebugLog('warn', 'write still busy', {
+        afterMs: WRITE_SLOW_MS,
+      })
+    }, WRITE_SLOW_MS)
     try {
       requireOnline()
       await fn()
+      reportDebugLog('info', 'write ok', {
+        ms: Math.round(performance.now() - t0),
+      })
     } catch (e) {
       const msg = e instanceof Error ? e.message : '書き込みに失敗しました'
       setError(msg)
+      reportDebugLog('error', 'write failed', {
+        error: msg,
+        ms: Math.round(performance.now() - t0),
+      })
       throw e
     } finally {
+      window.clearTimeout(slowTimer)
       setBusy(false)
     }
   }, [])

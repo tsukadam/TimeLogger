@@ -21,3 +21,6 @@ Thumbs.db
 # API 書き込みの一時・ロック（data/ 配下）
 data/*.lock
 data/.*.tmp
+
+# クライアント／サーバー追記のデバッグログ（肥大化・端末情報あり）
+data/debug.log

@@ -16,6 +16,9 @@ type ResourceMap = {
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? './api/index.php'
 
+/** 書き込みがこの時間を超えても終わらなければ warn をサーバーログへ */
+export const WRITE_SLOW_MS = 8000
+
 /** 同時に1本だけ。成功するまで次を出さない。 */
 let chain: Promise<unknown> = Promise.resolve()
 
@@ -52,10 +55,38 @@ async function withRetry<T>(
   throw last
 }
 
-function resourceUrl(resource: Resource): string {
+function resourceUrl(resource: Resource | 'debug'): string {
   const base = API_BASE.replace(/\/$/, '')
   const sep = base.includes('?') ? '&' : '?'
   return `${base}${sep}resource=${resource}`
+}
+
+export type DebugLevel = 'error' | 'warn' | 'info'
+
+/**
+ * サーバーの data/debug.log へ JSONL 追記（fire-and-forget）。
+ * メインの API キューには乗せない（ハング調査用なので本処理を止めない）。
+ */
+export function reportDebugLog(
+  level: DebugLevel,
+  message: string,
+  detail?: unknown,
+): void {
+  const body = JSON.stringify({
+    level,
+    message,
+    detail: detail ?? null,
+    ua: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+  })
+  void fetch(resourceUrl('debug'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+    cache: 'no-store',
+    keepalive: true,
+  }).catch((e) => {
+    console.error('[api] debug log failed', e)
+  })
 }
 
 export async function fetchResource<K extends Resource>(
@@ -71,6 +102,12 @@ export async function fetchResource<K extends Resource>(
         throw new Error(`GET ${resource} failed: ${res.status}`)
       }
       return (await res.json()) as ResourceMap[K]
+    }).catch((e) => {
+      console.error(`[api] GET ${resource}`, e)
+      reportDebugLog('error', `GET ${resource} failed`, {
+        error: e instanceof Error ? e.message : String(e),
+      })
+      throw e
     }),
   )
 }
@@ -96,6 +133,12 @@ export async function putResource<K extends Resource>(
         throw new Error(`PUT ${resource} rejected`)
       }
       return { ...body, updatedAt: result.updatedAt }
+    }).catch((e) => {
+      console.error(`[api] PUT ${resource}`, e)
+      reportDebugLog('error', `PUT ${resource} failed`, {
+        error: e instanceof Error ? e.message : String(e),
+      })
+      throw e
     }),
   )
 }

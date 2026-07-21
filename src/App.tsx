@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  forwardRef,
+  type ReactNode,
+} from 'react'
 import { useTabIndicator } from './lib/useTabIndicator'
 import { StoreProvider } from './state/Store'
 import { ActivityScreen } from './screens/ActivityScreen'
@@ -41,24 +49,32 @@ const PTR_MAX = 110
  * 上端でさらに下へ引っ張り、しきい値を超えて離すとページ全体をリロードする
  * （データ再取得に加えて SW 更新も拾える）。マウス操作には反応しない。
  */
-function RefreshableScroll({
-  className,
-  onScroll,
-  children,
-}: {
-  className: string
-  onScroll: () => void
-  children: React.ReactNode
-}) {
-  const ref = useRef<HTMLDivElement | null>(null)
+const RefreshableScroll = forwardRef<
+  HTMLDivElement,
+  {
+    className: string
+    onScroll: () => void
+    children: ReactNode
+  }
+>(function RefreshableScroll({ className, onScroll, children }, ref) {
+  const localRef = useRef<HTMLDivElement | null>(null)
   const [pull, setPull] = useState(0)
   const [dragging, setDragging] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const pullRef = useRef(0)
   const refreshingRef = useRef(false)
 
+  const setRefs = useCallback(
+    (node: HTMLDivElement | null) => {
+      localRef.current = node
+      if (typeof ref === 'function') ref(node)
+      else if (ref) ref.current = node
+    },
+    [ref],
+  )
+
   useEffect(() => {
-    const el = ref.current
+    const el = localRef.current
     if (!el) return
     let startY = 0
     let pulling = false
@@ -132,12 +148,17 @@ function RefreshableScroll({
           {refreshing ? '更新中…' : armed ? '離して更新' : '↓ 引っ張って更新'}
         </div>
       )}
-      <div ref={ref} className={className} onScroll={onScroll} data-scroll-lock>
+      <div
+        ref={setRefs}
+        className={className}
+        onScroll={onScroll}
+        data-scroll-lock
+      >
         {children}
       </div>
     </div>
   )
-}
+})
 
 export default function App() {
   const [route, setRoute] = useState<Route>('main')
@@ -146,6 +167,36 @@ export default function App() {
   const [navDir, setNavDir] = useState<'toLog' | 'toMain' | null>(null)
   const { scrolling, onScroll } = useFadeScrollbar()
   const { wrapRef: tabsRef, ind } = useTabIndicator(mainTab)
+  const mainScrollRef = useRef<HTMLDivElement | null>(null)
+  const tasksScrollTopRef = useRef(0)
+
+  const rememberTasksScroll = useCallback(() => {
+    if (mainTab !== 'tasks') return
+    const el = mainScrollRef.current
+    if (el) tasksScrollTopRef.current = el.scrollTop
+  }, [mainTab])
+
+  const handleMainScroll = useCallback(() => {
+    onScroll()
+    rememberTasksScroll()
+  }, [onScroll, rememberTasksScroll])
+
+  const switchMainTab = useCallback(
+    (tab: MainTab) => {
+      if (tab === mainTab) return
+      rememberTasksScroll()
+      setMainTab(tab)
+    },
+    [mainTab, rememberTasksScroll],
+  )
+
+  // Tasks の位置は保持、Activity は常に先頭
+  useLayoutEffect(() => {
+    if (route !== 'main') return
+    const el = mainScrollRef.current
+    if (!el) return
+    el.scrollTop = mainTab === 'tasks' ? tasksScrollTopRef.current : 0
+  }, [mainTab, route])
 
   const scrollClass = scrolling
     ? `${styles.scroll} ${styles.scrollActive}`
@@ -169,6 +220,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
+                  rememberTasksScroll()
                   setNavDir('toLog')
                   setRoute('log')
                 }}
@@ -199,7 +251,7 @@ export default function App() {
                   data-tab="tasks"
                   data-text="Tasks"
                   className={mainTab === 'tasks' ? styles.active : undefined}
-                  onClick={() => setMainTab('tasks')}
+                  onClick={() => switchMainTab('tasks')}
                 >
                   Tasks
                 </button>
@@ -208,7 +260,7 @@ export default function App() {
                   data-tab="activity"
                   data-text="Activity"
                   className={mainTab === 'activity' ? styles.active : undefined}
-                  onClick={() => setMainTab('activity')}
+                  onClick={() => switchMainTab('activity')}
                 >
                   Activity
                 </button>
@@ -220,7 +272,11 @@ export default function App() {
                   />
                 )}
               </div>
-              <RefreshableScroll className={scrollClass} onScroll={onScroll}>
+              <RefreshableScroll
+                ref={mainScrollRef}
+                className={scrollClass}
+                onScroll={handleMainScroll}
+              >
                 {mainTab === 'tasks' ? <TasksScreen /> : <ActivityScreen />}
               </RefreshableScroll>
             </div>

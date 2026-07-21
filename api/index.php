@@ -1,4 +1,3 @@
-<?php
 /**
  * TimeLogger API
  *
@@ -6,9 +5,15 @@
  * PUT  /api/index.php?resource=tasks|settings|events
  *      Body: 当該 JSON ファイル全体
  *
+ * POST /api/index.php?resource=debug
+ *      Body: { level, message, detail? } — data/debug.log に JSONL 追記
+ * GET  /api/index.php?resource=debug
+ *      data/debug.log 全文（無ければ空）
+ *
  * 書き込みは一時ファイルへ全書き込み後に rename で原子的に置換する。
  * 読み取り・置換は同リソースの .lock で flock 同期する（GET=共有 / PUT=排他）。
  * 読み取りは GET、または /data/*.json を直接見てもよい（AI用）。
+ * debug.log も /data/debug.log を直接読める。
  */
 
 declare(strict_types=1);
@@ -21,7 +26,7 @@ header('Cache-Control: no-store');
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 if ($origin !== '') {
     header("Access-Control-Allow-Origin: {$origin}");
-    header('Access-Control-Allow-Methods: GET, PUT, OPTIONS');
+    header('Access-Control-Allow-Methods: GET, PUT, POST, OPTIONS');
     header('Access-Control-Allow-Headers: Content-Type');
 }
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -30,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 $dataDir = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'data';
-$allowed = ['tasks', 'settings', 'events'];
+$allowed = ['tasks', 'settings', 'events', 'debug'];
 
 $resource = $_GET['resource'] ?? '';
 if (!in_array($resource, $allowed, true)) {
@@ -39,7 +44,7 @@ if (!in_array($resource, $allowed, true)) {
     exit;
 }
 
-$path = $dataDir . DIRECTORY_SEPARATOR . $resource . '.json';
+$path = $dataDir . DIRECTORY_SEPARATOR . ($resource === 'debug' ? 'debug.log' : $resource . '.json');
 $lockPath = $path . '.lock';
 
 function fail(int $code, string $message): void
@@ -53,6 +58,12 @@ function nowIso(): string
 {
     $dt = new DateTimeImmutable('now', new DateTimeZone('Asia/Tokyo'));
     return $dt->format('Y-m-d\\TH:i:sP');
+}
+
+function nowIsoMs(): string
+{
+    $dt = new DateTimeImmutable('now', new DateTimeZone('Asia/Tokyo'));
+    return $dt->format('Y-m-d\\TH:i:s.vP');
 }
 
 /**
@@ -127,7 +138,117 @@ function atomicReplace(string $path, string $data): void
     }
 }
 
+/** debug.log が肥大化したら末尾だけ残す */
+function trimDebugLogIfHuge(string $path, int $maxBytes = 512000, int $keepBytes = 256000): void
+{
+    if (!is_file($path)) {
+        return;
+    }
+    $size = filesize($path);
+    if ($size === false || $size <= $maxBytes) {
+        return;
+    }
+    $fp = fopen($path, 'rb');
+    if ($fp === false) {
+        return;
+    }
+    $start = max(0, $size - $keepBytes);
+    if (fseek($fp, $start) !== 0) {
+        fclose($fp);
+        return;
+    }
+    $chunk = stream_get_contents($fp);
+    fclose($fp);
+    if ($chunk === false) {
+        return;
+    }
+    // 途中行を捨てて行頭から
+    $nl = strpos($chunk, "\n");
+    if ($nl !== false) {
+        $chunk = substr($chunk, $nl + 1);
+    }
+    atomicReplace($path, $chunk);
+}
+
 $method = $_SERVER['REQUEST_METHOD'];
+
+// --- debug: 追記専用ログ（JSONL） ---
+if ($resource === 'debug') {
+    if ($method === 'GET') {
+        withResourceLock($lockPath, LOCK_SH, static function () use ($path): void {
+            if (!is_readable($path)) {
+                echo '';
+                return;
+            }
+            $fp = fopen($path, 'rb');
+            if ($fp === false) {
+                echo '';
+                return;
+            }
+            $raw = stream_get_contents($fp);
+            fclose($fp);
+            // テキストのまま返す（JSONL）
+            header('Content-Type: text/plain; charset=utf-8');
+            echo $raw === false ? '' : $raw;
+        });
+        exit;
+    }
+
+    if ($method === 'POST') {
+        $raw = file_get_contents('php://input');
+        if ($raw === false || $raw === '') {
+            fail(400, 'empty body');
+        }
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            fail(400, 'invalid json');
+        }
+        $level = $decoded['level'] ?? 'info';
+        $message = $decoded['message'] ?? '';
+        if (!is_string($level) || !is_string($message) || $message === '') {
+            fail(400, 'level/message required');
+        }
+        if (!in_array($level, ['error', 'warn', 'info'], true)) {
+            fail(400, 'invalid level');
+        }
+        // クライアント時刻よりサーバー時刻を正とする。detail は任意（長大すぎるものは切る）
+        $detail = $decoded['detail'] ?? null;
+        $detailJson = json_encode($detail, JSON_UNESCAPED_UNICODE);
+        if ($detailJson !== false && strlen($detailJson) > 4000) {
+            $detail = ['_truncated' => true, 'preview' => substr($detailJson, 0, 500)];
+        }
+        $entry = [
+            'at' => nowIsoMs(),
+            'level' => $level,
+            'message' => mb_substr($message, 0, 500),
+            'detail' => $detail,
+            'ua' => isset($decoded['ua']) && is_string($decoded['ua'])
+                ? mb_substr($decoded['ua'], 0, 300)
+                : null,
+        ];
+        $line = json_encode($entry, JSON_UNESCAPED_UNICODE);
+        if ($line === false) {
+            fail(500, 'encode failed');
+        }
+        $line .= "\n";
+
+        withResourceLock($lockPath, LOCK_EX, static function () use ($path, $line): void {
+            trimDebugLogIfHuge($path);
+            $fp = fopen($path, 'ab');
+            if ($fp === false) {
+                fail(500, 'open log failed');
+            }
+            writeAll($fp, $line);
+            fflush($fp);
+            fclose($fp);
+        });
+
+        echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    fail(405, 'method not allowed');
+}
 
 if ($method === 'GET') {
     withResourceLock($lockPath, LOCK_SH, static function () use ($path): void {
