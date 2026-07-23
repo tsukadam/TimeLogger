@@ -13,6 +13,31 @@ import {
 import type { Event, LogPrefs } from '../../types'
 import type { AppliedRange } from './types'
 
+/** Custom Day/Week グラフの棒数上限（これ超でボタン無効） */
+export const CUSTOM_MAX_BARS = 180
+
+export function customBarLimits(startMs: number, endMs: number) {
+  const span = Math.max(0, endMs - startMs)
+  const dayBars = Math.round(span / DAY_MS)
+  const weekBars = Math.ceil(span / (7 * DAY_MS))
+  return {
+    dayOk: dayBars <= CUSTOM_MAX_BARS,
+    weekOk: weekBars <= CUSTOM_MAX_BARS,
+  }
+}
+
+/** 期間に対して選べない粒度なら Week→Month へ落とす */
+export function clampCustomGrain(
+  grain: 'day' | 'week' | 'month',
+  startMs: number,
+  endMs: number,
+): 'day' | 'week' | 'month' {
+  const { dayOk, weekOk } = customBarLimits(startMs, endMs)
+  if (grain === 'day' && !dayOk) return weekOk ? 'week' : 'month'
+  if (grain === 'week' && !weekOk) return 'month'
+  return grain
+}
+
 export function makeDefaultPrefs(now = new Date()): LogPrefs {
   const t = todayKey(now)
   const { y, m } = ymParts(t)
@@ -25,6 +50,7 @@ export function makeDefaultPrefs(now = new Date()): LogPrefs {
     customStart: t,
     customEnd: t,
     customApplied: null,
+    customGrain: 'day',
   }
 }
 
@@ -37,6 +63,7 @@ export function normalizePrefs(p: LogPrefs | null): LogPrefs | null {
     year?: number
   }
   const def = makeDefaultPrefs()
+  const grain = old.customGrain
   return {
     ...def,
     ...p,
@@ -47,6 +74,10 @@ export function normalizePrefs(p: LogPrefs | null): LogPrefs | null {
         : def.monthStart),
     yearStart:
       old.yearStart ?? (old.year ? monthKey(old.year, 1) : def.yearStart),
+    customGrain:
+      grain === 'day' || grain === 'week' || grain === 'month'
+        ? grain
+        : def.customGrain,
   }
 }
 

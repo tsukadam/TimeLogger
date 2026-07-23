@@ -452,6 +452,16 @@
   font-weight: 650;
 }
 
+.modeBtn:disabled,
+.modeOn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.applyCenter {
+  justify-content: center;
+}
+
 .pieCenter {
   display: flex;
   justify-content: center;

@@ -4,6 +4,7 @@ import {
   addMonthsKey,
   dateKey,
   dayStartMs,
+  formatMd,
   nowIso,
 } from '../../lib/time'
 import type { Event, Folder, Task } from '../../types'
@@ -11,6 +12,17 @@ import type { AppliedRange, Column, Seg, Slice, TotalCol } from './types'
 
 // Month サマリーで表示する日付ラベル（全日表示だと重なるため）
 const MONTH_LABEL_DAYS = [1, 5, 10, 15, 20, 25, 30]
+
+/** Custom Day: 行数の約 1/6 本だけラベル（最大6）。末尾は必ず含める */
+function customDayLabelIndices(n: number): Set<number> {
+  const set = new Set<number>()
+  if (n <= 0) return set
+  const count = Math.min(6, n)
+  for (let k = 1; k <= count; k++) {
+    set.add(Math.round((k * n) / count) - 1)
+  }
+  return set
+}
 
 export type DisplayInfo = {
   taskId: string
@@ -117,8 +129,10 @@ export function aggregateLogData(args: {
   folders: Folder[]
   now: number
   sumMode: 'tasks' | 'genres'
+  customGrain?: 'day' | 'week' | 'month'
 }): AggregateLogData {
   const { applied, events, tasks, folders, now, sumMode } = args
+  const customGrain = args.customGrain ?? 'day'
   const { start, end, kind: k } = applied
   const prepared = prepareEvents(events, tasks, folders, now)
 
@@ -231,12 +245,73 @@ export function aggregateLogData(args: {
       })
       cursor = addDaysKey(cursor, 1)
     }
+  } else if (k === 'custom') {
+    if (customGrain === 'day') {
+      let cursor = dateKey(nowIso(new Date(start)))
+      const lastDay = dateKey(nowIso(new Date(end - 1)))
+      const dayKeys: string[] = []
+      let guard = 0
+      while (guard++ < 4000 && cursor <= lastDay) {
+        dayKeys.push(cursor)
+        cursor = addDaysKey(cursor, 1)
+      }
+      const labelAt = customDayLabelIndices(dayKeys.length)
+      dayKeys.forEach((dk, i) => {
+        const cs = dayStartMs(dk)
+        columns.push({
+          key: dk,
+          label: labelAt.has(i) ? formatMd(dk) : '',
+          start: cs,
+          end: cs + DAY_MS,
+          segs: clipSegs(prepared, cs, cs + DAY_MS),
+        })
+      })
+    } else if (customGrain === 'week') {
+      let cursor = dateKey(nowIso(new Date(start)))
+      const lastDay = dateKey(nowIso(new Date(end - 1)))
+      let guard = 0
+      while (guard++ < 600 && cursor <= lastDay) {
+        const cs = dayStartMs(cursor)
+        const ce = Math.min(cs + 7 * DAY_MS, end)
+        columns.push({
+          key: cursor,
+          label: '',
+          start: cs,
+          end: ce,
+          segs: clipSegs(prepared, cs, ce),
+        })
+        cursor = addDaysKey(cursor, 7)
+      }
+    } else {
+      // month: 年グラフと同形（暦月ごと。期間が短いと1本だけになり得る）
+      let cursor = `${dateKey(nowIso(new Date(start))).slice(0, 7)}-01`
+      let guard = 0
+      while (guard++ < 240 && dayStartMs(cursor) < end) {
+        const next = addMonthsKey(cursor, 1)
+        const cs = Math.max(dayStartMs(cursor), start)
+        const ce = Math.min(dayStartMs(next), end)
+        if (ce > cs) {
+          columns.push({
+            key: cursor,
+            label: String(Number(cursor.slice(5, 7))),
+            start: cs,
+            end: ce,
+            segs: clipSegs(prepared, cs, ce),
+          })
+        }
+        cursor = next
+      }
+    }
   }
-  // custom はサマリーなし（期間が可変で件数も多くなり得るため）
 
   // Genres 表示: 列（日/月）ごとのジャンル合算棒。積み順は期間内の初出現順（下から）
   let totalColumns: TotalCol[] = []
-  if (sumMode === 'genres' && (k === 'week' || k === 'month' || k === 'year')) {
+  const genreKinds =
+    k === 'week' ||
+    k === 'month' ||
+    k === 'year' ||
+    k === 'custom'
+  if (sumMode === 'genres' && genreKinds) {
     totalColumns = columns.map((col) => {
       const m = new Map<string, Slice>()
       for (const p of prepared) {

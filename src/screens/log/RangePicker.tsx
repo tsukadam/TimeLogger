@@ -9,10 +9,13 @@ import {
   monthKey,
   weekdayShort,
   ymParts,
+  dayStartMs,
+  DAY_MS,
 } from '../../lib/time'
 import { useScrollLock } from '../../lib/useScrollLock'
 import type { LogPrefs } from '../../types'
 import styles from '../LogScreen.module.css'
+import { clampCustomGrain } from './prefs'
 
 const MONTH_NAMES = [
   '1月',
@@ -100,11 +103,14 @@ export function RangePicker({
         draft.customStart <= draft.customEnd
           ? draft.customEnd
           : draft.customStart
+      const start = dayStartMs(a)
+      const end = dayStartMs(b) + DAY_MS
       next = {
         ...draft,
         customStart: a,
         customEnd: b,
         customApplied: { start: a, end: b },
+        customGrain: clampCustomGrain(draft.customGrain, start, end),
       }
     }
     onPersist(next)
@@ -277,7 +283,7 @@ export function RangePicker({
         )}
 
         {draft.kind === 'custom' && (
-          <div className={form.sheetActions}>
+          <div className={`${form.sheetActions} ${styles.applyCenter}`}>
             <button
               type="button"
               className={form.primary}

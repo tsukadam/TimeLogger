@@ -58,6 +58,8 @@ export type LogPrefs = {
   customEnd: string
   /** Apply 済みの Custom。未適用なら null → 表示は当日1日 */
   customApplied: { start: string; end: string } | null
+  /** Custom サマリーの粒度 */
+  customGrain: 'day' | 'week' | 'month'
 }
 
 export type SettingsFile = {

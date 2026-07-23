@@ -19,7 +19,13 @@ import type { LogKind, LogPrefs } from '../../types'
 import styles from '../LogScreen.module.css'
 import { aggregateLogData, resolveDisplay } from './aggregate'
 import { IndividualChart } from './IndividualChart'
-import { buildApplied, makeDefaultPrefs, normalizePrefs } from './prefs'
+import {
+  buildApplied,
+  clampCustomGrain,
+  customBarLimits,
+  makeDefaultPrefs,
+  normalizePrefs,
+} from './prefs'
 import { RangePicker, type SheetPos } from './RangePicker'
 import { SliceBreakdown } from './SliceBreakdown'
 import { TotalsChart } from './TotalsChart'
@@ -54,7 +60,7 @@ export function LogScreen() {
       window.clearTimeout(t2)
       window.clearTimeout(t3)
     }
-  }, [prefs.kind])
+  }, [prefs.kind, prefs.customGrain])
 
   const { wrapRef: periodTabsRef, ind: periodInd } = useTabIndicator(prefs.kind, [
     prefsReady,
@@ -76,6 +82,27 @@ export function LogScreen() {
     [prefs, now, events],
   )
 
+  const persist = async (next: LogPrefs) => {
+    setPrefs(next)
+    try {
+      await saveLogPrefs(next)
+    } catch {
+      /* Store が表示 */
+    }
+  }
+
+  // Custom: Day/Week が棒数上限超えなら自動で落とす（Day→Week→Month）
+  useEffect(() => {
+    if (!prefsReady || prefs.kind !== 'custom') return
+    const next = clampCustomGrain(
+      prefs.customGrain,
+      applied.start,
+      applied.end,
+    )
+    if (next === prefs.customGrain) return
+    void persist({ ...prefs, customGrain: next })
+  }, [prefsReady, prefs, applied.start, applied.end])
+
   // 表示期間に必要なチャンクをオンデマンド読込（All は全チャンク）
   useEffect(() => {
     if (!prefsReady) return
@@ -91,15 +118,6 @@ export function LogScreen() {
     applied.end,
     ensureEventsForRange,
   ])
-
-  const persist = async (next: LogPrefs) => {
-    setPrefs(next)
-    try {
-      await saveLogPrefs(next)
-    } catch {
-      /* Store が表示 */
-    }
-  }
 
   const openPicker = () => {
     if (prefs.kind === 'all') return
@@ -167,12 +185,26 @@ export function LogScreen() {
         folders,
         now,
         sumMode,
+        customGrain: prefs.customGrain,
       }),
-    [applied, events, tasks, folders, now, sumMode],
+    [applied, events, tasks, folders, now, sumMode, prefs.customGrain],
   )
 
   const hasSumModes =
-    prefs.kind === 'week' || prefs.kind === 'month' || prefs.kind === 'year'
+    prefs.kind === 'week' ||
+    prefs.kind === 'month' ||
+    prefs.kind === 'year' ||
+    prefs.kind === 'custom'
+
+  const chartKeyBase =
+    prefs.kind === 'custom'
+      ? `${prefs.kind}-${prefs.customGrain}-${applied.start}-${applied.end}`
+      : `${prefs.kind}-${applied.start}`
+
+  const customLimits =
+    prefs.kind === 'custom'
+      ? customBarLimits(applied.start, applied.end)
+      : { dayOk: true, weekOk: true }
 
   if (loading || !prefsReady) {
     return <p className={chrome.status}>Loading...</p>
@@ -256,7 +288,7 @@ export function LogScreen() {
 
       <hr className={styles.rule} />
 
-      {prefs.kind !== 'all' && prefs.kind !== 'custom' && (
+      {prefs.kind !== 'all' && (
         <>
           <h2 className={styles.sectionTitle}>Summary</h2>
           <div className={styles.panel}>
@@ -264,21 +296,51 @@ export function LogScreen() {
               <p className={chrome.status}>No Data</p>
             ) : hasSumModes && sumMode === 'genres' ? (
               <TotalsChart
-                key={`${prefs.kind}-${applied.start}-${sumMode}`}
+                key={`${chartKeyBase}-${sumMode}`}
                 columns={totalColumns}
                 draw={drawStage >= 1}
               />
             ) : (
               <IndividualChart
-                key={`${prefs.kind}-${applied.start}`}
+                key={chartKeyBase}
                 columns={columns}
                 chartMode={chartMode}
                 onSeg={setEditId}
-                tapName={prefs.kind === 'year'}
+                tapName={
+                  prefs.kind === 'year' ||
+                  (prefs.kind === 'custom' && prefs.customGrain === 'month')
+                }
                 draw={drawStage >= 1}
               />
             )}
           </div>
+          {prefs.kind === 'custom' && (
+            <div className={styles.modeBtns}>
+              {(
+                [
+                  ['day', 'Day', customLimits.dayOk],
+                  ['week', 'Week', customLimits.weekOk],
+                  ['month', 'Month', true],
+                ] as const
+              ).map(([g, label, ok]) => (
+                <button
+                  key={g}
+                  type="button"
+                  data-text={label}
+                  disabled={!ok}
+                  className={
+                    prefs.customGrain === g ? styles.modeOn : styles.modeBtn
+                  }
+                  onClick={() => {
+                    if (!ok) return
+                    void persist({ ...prefs, customGrain: g })
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           {hasSumModes && totalSec > 0 && (
             <div className={styles.modeBtns}>
               <button
@@ -360,7 +422,7 @@ export function LogScreen() {
         pieSlices={pieTaskSlices}
         totalSec={totalSec}
         draw={drawStage >= 2}
-        chartKey={`${prefs.kind}-${applied.start}`}
+        chartKey={chartKeyBase}
       />
 
       <hr className={styles.rule} />
@@ -371,7 +433,7 @@ export function LogScreen() {
         pieSlices={pieFolderSlices}
         totalSec={totalSec}
         draw={drawStage >= 3}
-        chartKey={`${prefs.kind}-${applied.start}`}
+        chartKey={chartKeyBase}
       />
 
       {pickerOpen && prefs.kind !== 'all' && sheetPos && (
