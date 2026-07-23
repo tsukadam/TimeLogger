@@ -2,8 +2,10 @@
 /**
  * TimeLogger API
  *
- * GET  /api/index.php?resource=tasks|settings|events
- * PUT  /api/index.php?resource=tasks|settings|events
+ * GET  /api/index.php?resource=tasks|settings|events-index
+ * PUT  /api/index.php?resource=tasks|settings|events-index
+ * GET  /api/index.php?resource=events&chunk=2026Q3
+ * PUT  /api/index.php?resource=events&chunk=2026Q3
  *      Body: 当該 JSON ファイル全体
  *
  * POST /api/index.php?resource=debug
@@ -11,6 +13,8 @@
  * GET  /api/index.php?resource=debug
  *      data/debug.log 全文（無ければ空）
  *
+ * イベントは data/events/{chunk}.json + data/events/index.json。
+ * 旧 data/events.json は移行前のバックアップ用（API では読まない）。
  * 書き込みは一時ファイルへ全書き込み後に rename で原子的に置換する。
  * 読み取り・置換は同リソースの .lock で flock 同期する（GET=共有 / PUT=排他）。
  * 読み取りは GET、または /data/*.json を直接見てもよい（AI用）。
@@ -36,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 $dataDir = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'data';
-$allowed = ['tasks', 'settings', 'events', 'debug'];
+$allowed = ['tasks', 'settings', 'events', 'events-index', 'debug'];
 
 $resource = $_GET['resource'] ?? '';
 if (!in_array($resource, $allowed, true)) {
@@ -45,7 +49,21 @@ if (!in_array($resource, $allowed, true)) {
     exit;
 }
 
-$path = $dataDir . DIRECTORY_SEPARATOR . ($resource === 'debug' ? 'debug.log' : $resource . '.json');
+if ($resource === 'debug') {
+    $path = $dataDir . DIRECTORY_SEPARATOR . 'debug.log';
+} elseif ($resource === 'events-index') {
+    $path = $dataDir . DIRECTORY_SEPARATOR . 'events' . DIRECTORY_SEPARATOR . 'index.json';
+} elseif ($resource === 'events') {
+    $chunk = $_GET['chunk'] ?? '';
+    if (!is_string($chunk) || !preg_match('/^\d{4}Q[1-4]$/', $chunk)) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'chunk required (YYYYQn)'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    $path = $dataDir . DIRECTORY_SEPARATOR . 'events' . DIRECTORY_SEPARATOR . $chunk . '.json';
+} else {
+    $path = $dataDir . DIRECTORY_SEPARATOR . $resource . '.json';
+}
 $lockPath = $path . '.lock';
 
 function fail(int $code, string $message): void
@@ -311,6 +329,10 @@ if ($method === 'PUT') {
     $out .= "\n";
 
     withResourceLock($lockPath, LOCK_EX, static function () use ($path, $out): void {
+        $dir = dirname($path);
+        if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+            fail(500, 'mkdir failed');
+        }
         atomicReplace($path, $out);
     });
 

@@ -3,8 +3,10 @@
  *
  * ファイル:
  * - data/tasks.json     … フォルダ＋タスク
- * - data/settings.json  … Setting（現状空）
- * - data/events.json    … 記録（終了時刻 null = 記録中の1件）
+ * - data/settings.json  … Setting
+ * - data/events/        … 記録（四半期チャンク + index.json）
+ * - data/events.json    … 分割前バックアップ（API は使わない）
+ * - data/debug.log      … クライアント／API デバッグ追記ログ
  *
  * 時刻はすべて ISO 8601（ミリ秒付き・タイムゾーン付き、例: 2026-07-14T09:00:00.123+09:00）
  * 表示は秒未満切り捨て。記録有無の判定など処理は ms を使う。
@@ -86,6 +88,15 @@ export type Event = {
 
 export type EventsFile = {
   events: Event[]
+  updatedAt: string
+}
+
+/** data/events/index.json — 四半期チャンクの目次 */
+export type EventsIndex = {
+  /** 古い→新しい順 */
+  chunks: string[]
+  /** いま書き込む四半期（例: 2026Q3） */
+  current: string
   updatedAt: string
 }
 

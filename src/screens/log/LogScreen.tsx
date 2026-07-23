@@ -26,7 +26,7 @@ import { TotalsChart } from './TotalsChart'
 
 export function LogScreen() {
   const { loading, error, events, tasks, folders, logPrefs } = useStoreData()
-  const { clearError, saveLogPrefs } = useStoreActions()
+  const { clearError, saveLogPrefs, ensureEventsForRange } = useStoreActions()
 
   const today = todayKey()
   const ty = ymParts(today).y
@@ -75,6 +75,22 @@ export function LogScreen() {
     () => buildApplied(prefs, now, events),
     [prefs, now, events],
   )
+
+  // 表示期間に必要なチャンクをオンデマンド読込（All は全チャンク）
+  useEffect(() => {
+    if (!prefsReady) return
+    if (prefs.kind === 'all') {
+      void ensureEventsForRange(0, Date.now() + 86_400_000)
+      return
+    }
+    void ensureEventsForRange(applied.start, applied.end)
+  }, [
+    prefsReady,
+    prefs.kind,
+    applied.start,
+    applied.end,
+    ensureEventsForRange,
+  ])
 
   const persist = async (next: LogPrefs) => {
     setPrefs(next)

@@ -1,17 +1,18 @@
 import type {
   ApiError,
   EventsFile,
+  EventsIndex,
   SettingsFile,
   TasksFile,
   WriteResult,
 } from '../types'
 
-export type Resource = 'tasks' | 'settings' | 'events'
+export type Resource = 'tasks' | 'settings' | 'events-index'
 
 type ResourceMap = {
   tasks: TasksFile
   settings: SettingsFile
-  events: EventsFile
+  'events-index': EventsIndex
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? './api/index.php'
@@ -67,10 +68,13 @@ async function readJson<T>(res: Response): Promise<T> {
   }
 }
 
-function resourceUrl(resource: Resource | 'debug'): string {
+function apiUrl(query: Record<string, string>): string {
   const base = API_BASE.replace(/\/$/, '')
   const sep = base.includes('?') ? '&' : '?'
-  return `${base}${sep}resource=${resource}`
+  const qs = Object.entries(query)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join('&')
+  return `${base}${sep}${qs}`
 }
 
 export type DebugLevel = 'error' | 'warn' | 'info'
@@ -94,7 +98,7 @@ export function reportDebugLog(
       detail: detail ?? null,
       ua: typeof navigator !== 'undefined' ? navigator.userAgent : null,
     })
-    void fetch(resourceUrl('debug'), {
+    void fetch(apiUrl({ resource: 'debug' }), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,
@@ -111,7 +115,7 @@ export async function fetchResource<K extends Resource>(
 ): Promise<ResourceMap[K]> {
   return enqueue(() =>
     withRetry(async () => {
-      const res = await fetch(resourceUrl(resource), {
+      const res = await fetch(apiUrl({ resource }), {
         method: 'GET',
         cache: 'no-store',
       })
@@ -135,7 +139,7 @@ export async function putResource<K extends Resource>(
 ): Promise<ResourceMap[K]> {
   return enqueue(() =>
     withRetry(async () => {
-      const res = await fetch(resourceUrl(resource), {
+      const res = await fetch(apiUrl({ resource }), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -144,7 +148,6 @@ export async function putResource<K extends Resource>(
         const text = await res.text().catch(() => '')
         throw new Error(`PUT ${resource} failed: ${res.status} ${text}`)
       }
-      // サーバーが updatedAt を付け直すので、返り値の updatedAt で揃える
       const result = await readJson<WriteResult | ApiError>(res)
       if (!result.ok) {
         throw new Error(`PUT ${resource} rejected`)
@@ -153,6 +156,57 @@ export async function putResource<K extends Resource>(
     }).catch((e) => {
       console.error(`[api] PUT ${resource}`, e)
       reportDebugLog('error', `PUT ${resource} failed`, {
+        error: e instanceof Error ? e.message : String(e),
+      })
+      throw e
+    }),
+  )
+}
+
+export async function fetchEventsChunk(chunk: string): Promise<EventsFile> {
+  return enqueue(() =>
+    withRetry(async () => {
+      const res = await fetch(apiUrl({ resource: 'events', chunk }), {
+        method: 'GET',
+        cache: 'no-store',
+      })
+      if (!res.ok) {
+        throw new Error(`GET events ${chunk} failed: ${res.status}`)
+      }
+      return await readJson<EventsFile>(res)
+    }).catch((e) => {
+      console.error(`[api] GET events ${chunk}`, e)
+      reportDebugLog('error', `GET events ${chunk} failed`, {
+        error: e instanceof Error ? e.message : String(e),
+      })
+      throw e
+    }),
+  )
+}
+
+export async function putEventsChunk(
+  chunk: string,
+  body: EventsFile,
+): Promise<EventsFile> {
+  return enqueue(() =>
+    withRetry(async () => {
+      const res = await fetch(apiUrl({ resource: 'events', chunk }), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        throw new Error(`PUT events ${chunk} failed: ${res.status} ${text}`)
+      }
+      const result = await readJson<WriteResult | ApiError>(res)
+      if (!result.ok) {
+        throw new Error(`PUT events ${chunk} rejected`)
+      }
+      return { ...body, updatedAt: result.updatedAt }
+    }).catch((e) => {
+      console.error(`[api] PUT events ${chunk}`, e)
+      reportDebugLog('error', `PUT events ${chunk} failed`, {
         error: e instanceof Error ? e.message : String(e),
       })
       throw e

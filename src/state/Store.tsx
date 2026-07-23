@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -13,7 +14,7 @@ import { remapPaletteTaskColor } from '../lib/color'
 import { elapsedMs, MIN_RECORD_MS, nowIso } from '../lib/time'
 import type {
   Event,
-  EventsFile,
+  EventsIndex,
   Folder,
   LogPrefs,
   SettingsFile,
@@ -21,6 +22,18 @@ import type {
   TasksFile,
 } from '../types'
 import { validateEventRange } from './eventValidation'
+import {
+  type ChunkMap,
+  fetchBootEvents,
+  findChunkIdForEvent,
+  hasMoreOlderChunks,
+  loadChunks,
+  mergeChunkEvents,
+  nextOlderChunkId,
+  persistChunkUpdates,
+  quarterIdFromIso,
+  rangeChunkIds,
+} from './eventsRepository'
 
 type StoreData = {
   loading: boolean
@@ -30,6 +43,7 @@ type StoreData = {
   events: Event[]
   current: Event | null
   logPrefs: LogPrefs | null
+  hasMoreOlderEvents: boolean
 }
 
 type StoreActions = {
@@ -65,6 +79,8 @@ type StoreActions = {
   deleteTask: (taskId: string) => Promise<void>
   startTask: (taskId: string) => Promise<void>
   stopCurrent: () => Promise<void>
+  loadOlderEvents: () => Promise<void>
+  ensureEventsForRange: (startMs: number, endMs: number) => Promise<void>
 }
 
 const BusyContext = createContext(false)
@@ -77,13 +93,66 @@ function requireOnline(): void {
   }
 }
 
+/**
+ * 記録中イベントを締める。
+ * 経過 < MIN_RECORD_MS なら行ごと削除（誤タップ扱い）。
+ * それ以外は endedAt を付ける。
+ * 同時に複数の未終了があっても全て処理する（壊れた状態の修復も兼ねる）。
+ */
+function closeOrDiscardOpen(
+  events: Event[],
+  endMs: number,
+  endIso: string,
+): Event[] {
+  const next: Event[] = []
+  for (const ev of events) {
+    if (ev.endedAt !== null) {
+      next.push(ev)
+      continue
+    }
+    const startMs = new Date(ev.startedAt).getTime()
+    const elapsed = elapsedMs(ev.startedAt, null, endMs)
+    // 念のため startMs も照合（NaN 防止）
+    if (!Number.isFinite(startMs) || elapsed < MIN_RECORD_MS) {
+      // 破棄: next に入れない
+      continue
+    }
+    next.push({ ...ev, endedAt: endIso, updatedAt: endIso })
+  }
+  return next
+}
+
+/** 未終了イベントがあったチャンクだけ、締めた events 配列を返す */
+function closeOpenAcrossChunks(
+  chunks: ChunkMap,
+  endMs: number,
+  endIso: string,
+): Record<string, Event[]> {
+  const dirty: Record<string, Event[]> = {}
+  for (const [id, file] of Object.entries(chunks)) {
+    if (!file.events.some((e) => e.endedAt === null)) continue
+    dirty[id] = closeOrDiscardOpen(file.events, endMs, endIso)
+  }
+  return dirty
+}
+
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [tasksFile, setTasksFile] = useState<TasksFile | null>(null)
-  const [eventsFile, setEventsFile] = useState<EventsFile | null>(null)
+  const [eventsIndex, setEventsIndex] = useState<EventsIndex | null>(null)
+  const [chunks, setChunks] = useState<ChunkMap>({})
   const [settingsFile, setSettingsFile] = useState<SettingsFile | null>(null)
+
+  const eventsIndexRef = useRef(eventsIndex)
+  const chunksRef = useRef(chunks)
+  useEffect(() => {
+    eventsIndexRef.current = eventsIndex
+  }, [eventsIndex])
+  useEffect(() => {
+    chunksRef.current = chunks
+  }, [chunks])
 
   const clearError = useCallback(() => setError(null), [])
 
@@ -93,15 +162,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setLoading(true)
       setError(null)
       try {
-        const [tasks, events, settings] = await Promise.all([
+        const [tasks, settings, boot] = await Promise.all([
           fetchResource('tasks'),
-          fetchResource('events'),
           fetchResource('settings'),
+          fetchBootEvents(),
         ])
         if (cancelled) return
         setTasksFile(tasks)
-        setEventsFile(events)
         setSettingsFile(settings)
+        setEventsIndex(boot.index)
+        setChunks(boot.chunks)
       } catch (e) {
         if (cancelled) return
         setError(e instanceof Error ? e.message : '読み込みに失敗しました')
@@ -143,6 +213,51 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setBusy(false)
     }
   }, [])
+
+  const applyChunkPatch = useCallback((patch: ChunkMap) => {
+    const next = { ...chunksRef.current, ...patch }
+    chunksRef.current = next
+    setChunks(next)
+  }, [])
+
+  const applyPersistResult = useCallback(
+    (result: { chunks: ChunkMap; index: EventsIndex }) => {
+      applyChunkPatch(result.chunks)
+      eventsIndexRef.current = result.index
+      setEventsIndex(result.index)
+    },
+    [applyChunkPatch],
+  )
+
+  const ensureChunks = useCallback(async (ids: string[]) => {
+    const index = eventsIndexRef.current
+    if (!index || ids.length === 0) return
+    const next = await loadChunks(ids, chunksRef.current, index)
+    if (next === chunksRef.current) return
+    chunksRef.current = next
+    setChunks(next)
+  }, [])
+
+  const loadOlderEvents = useCallback(async () => {
+    const index = eventsIndexRef.current
+    if (!index) return
+    const nextId = nextOlderChunkId(index, chunksRef.current)
+    if (!nextId) return
+    await ensureChunks([nextId])
+  }, [ensureChunks])
+
+  const ensureEventsForRange = useCallback(
+    async (startMs: number, endMs: number) => {
+      const index = eventsIndexRef.current
+      if (!index) return
+      const rangeIds = rangeChunkIds(index, startMs, endMs)
+      // 非常に広い範囲で全四半期に重なる場合は index 上の全チャンクを読む
+      const ids =
+        rangeIds.length >= index.chunks.length ? [...index.chunks] : rangeIds
+      await ensureChunks(ids)
+    },
+    [ensureChunks],
+  )
 
   const addFolder = useCallback(
     async (name: string, color: string) => {
@@ -201,39 +316,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       })
     },
     [runWrite, tasksFile],
-  )
-
-  const persistEvents = useCallback(async (next: EventsFile) => {
-    const saved = await putResource('events', next)
-    setEventsFile(saved)
-  }, [])
-
-  /**
-   * 記録中イベントを締める。
-   * 経過 < MIN_RECORD_MS なら行ごと削除（誤タップ扱い）。
-   * それ以外は endedAt を付ける。
-   * 同時に複数の未終了があっても全て処理する（壊れた状態の修復も兼ねる）。
-   */
-  const closeOrDiscardOpen = useCallback(
-    (events: Event[], endMs: number, endIso: string): Event[] => {
-      const next: Event[] = []
-      for (const ev of events) {
-        if (ev.endedAt !== null) {
-          next.push(ev)
-          continue
-        }
-        const startMs = new Date(ev.startedAt).getTime()
-        const elapsed = elapsedMs(ev.startedAt, null, endMs)
-        // 念のため startMs も照合（NaN 防止）
-        if (!Number.isFinite(startMs) || elapsed < MIN_RECORD_MS) {
-          // 破棄: next に入れない
-          continue
-        }
-        next.push({ ...ev, endedAt: endIso, updatedAt: endIso })
-      }
-      return next
-    },
-    [],
   )
 
   const updateFolder = useCallback(
@@ -406,18 +488,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setTasksFile(saved)
 
         // 記録中のタスクを消したら、記録も停止する
-        const open = eventsFile?.events.find((e) => e.endedAt === null)
-        if (eventsFile && open && open.taskId === taskId) {
+        const open = mergeChunkEvents(chunksRef.current).find(
+          (e) => e.endedAt === null,
+        )
+        const index = eventsIndexRef.current
+        if (index && open && open.taskId === taskId) {
           const endMs = Date.now()
           const endIso = nowIso(new Date(endMs))
-          await persistEvents({
-            events: closeOrDiscardOpen(eventsFile.events, endMs, endIso),
-            updatedAt: endIso,
-          })
+          const dirty = closeOpenAcrossChunks(chunksRef.current, endMs, endIso)
+          if (Object.keys(dirty).length > 0) {
+            const result = await persistChunkUpdates(dirty, index)
+            applyPersistResult(result)
+          }
         }
       })
     },
-    [closeOrDiscardOpen, eventsFile, persistEvents, runWrite, tasksFile],
+    [applyPersistResult, runWrite, tasksFile],
   )
 
   const updateEvent = useCallback(
@@ -429,7 +515,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         endedAt: string | null
       },
     ) => {
-      if (!tasksFile || !eventsFile) return
+      if (!tasksFile || !eventsIndexRef.current) return
       const task = tasksFile.tasks.find((x) => x.id === patch.taskId)
       if (!task) throw new Error('タスクが見つかりません')
       const folder = tasksFile.folders.find((x) => x.id === task.folderId)
@@ -445,8 +531,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         endMs = new Date(endedAt).getTime()
         validateEndBound = true
       }
+      await ensureEventsForRange(startMs, endMs)
       validateEventRange({
-        events: eventsFile.events,
+        events: mergeChunkEvents(chunksRef.current),
         startMs,
         endMs,
         excludeId: eventId,
@@ -455,12 +542,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       })
 
       await runWrite(async () => {
-        const t = nowIso()
-        const list = [...eventsFile.events]
-        const idx = list.findIndex((e) => e.id === eventId)
-        if (idx < 0) throw new Error('記録が見つかりません')
+        const index = eventsIndexRef.current
+        if (!index) throw new Error('記録の目次がありません')
 
-        const prev = list[idx]!
+        const oldChunkId = findChunkIdForEvent(chunksRef.current, eventId)
+        if (!oldChunkId) throw new Error('記録が見つかりません')
+
+        const prevList = chunksRef.current[oldChunkId]?.events ?? []
+        const prev = prevList.find((e) => e.id === eventId)
+        if (!prev) throw new Error('記録が見つかりません')
+
         // 記録中は終了を触れない（endedAt は null のまま）
         if (prev.endedAt === null && endedAt !== null) {
           throw new Error('記録中の終了時刻は編集できません')
@@ -469,8 +560,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           throw new Error('終了済みの記録を記録中には戻せません')
         }
 
+        const t = nowIso()
         const taskChanged = prev.taskId !== task.id
-        list[idx] = {
+        const updated: Event = {
           ...prev,
           taskId: task.id,
           folderId: folder.id,
@@ -487,15 +579,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           endedAt: prev.endedAt === null ? null : endedAt,
           updatedAt: t,
         }
-        await persistEvents({ events: list, updatedAt: t })
+
+        const newChunkId = quarterIdFromIso(patch.startedAt)
+        const updates: Record<string, Event[]> = {}
+
+        if (newChunkId === oldChunkId) {
+          updates[oldChunkId] = prevList.map((e) =>
+            e.id === eventId ? updated : e,
+          )
+        } else {
+          // 移動先が index にあるなら未ロードのまま上書きしない
+          if (index.chunks.includes(newChunkId)) {
+            await ensureChunks([newChunkId])
+          }
+          updates[oldChunkId] = prevList.filter((e) => e.id !== eventId)
+          const dest = chunksRef.current[newChunkId]?.events ?? []
+          updates[newChunkId] = [...dest, updated]
+        }
+
+        const result = await persistChunkUpdates(updates, index)
+        applyPersistResult(result)
       })
     },
-    [eventsFile, persistEvents, runWrite, tasksFile],
+    [applyPersistResult, ensureChunks, ensureEventsForRange, runWrite, tasksFile],
   )
 
   const addEvent = useCallback(
     async (patch: { taskId: string; startedAt: string; endedAt: string }) => {
-      if (!tasksFile || !eventsFile) return
+      if (!tasksFile || !eventsIndexRef.current) return
       const task = tasksFile.tasks.find((x) => x.id === patch.taskId)
       if (!task) throw new Error('タスクが見つかりません')
       const folder = tasksFile.folders.find((x) => x.id === task.folderId)
@@ -503,8 +614,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       const startMs = new Date(patch.startedAt).getTime()
       const endMs = new Date(patch.endedAt).getTime()
+      const qid = quarterIdFromIso(patch.startedAt)
+      await ensureEventsForRange(startMs, endMs)
+      // index に無い四半期でも後で persist が作る。既存ならロード済みにする
+      if (eventsIndexRef.current?.chunks.includes(qid)) {
+        await ensureChunks([qid])
+      }
       validateEventRange({
-        events: eventsFile.events,
+        events: mergeChunkEvents(chunksRef.current),
         startMs,
         endMs,
         excludeId: null,
@@ -513,6 +630,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       })
 
       await runWrite(async () => {
+        const index = eventsIndexRef.current
+        if (!index) throw new Error('記録の目次がありません')
         const t = nowIso()
         const ev: Event = {
           id: newId(),
@@ -527,41 +646,48 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           createdAt: t,
           updatedAt: t,
         }
-        await persistEvents({
-          events: [...eventsFile.events, ev],
-          updatedAt: t,
-        })
+        const base = chunksRef.current[qid]?.events ?? []
+        const result = await persistChunkUpdates({ [qid]: [...base, ev] }, index)
+        applyPersistResult(result)
       })
     },
-    [eventsFile, persistEvents, runWrite, tasksFile],
+    [applyPersistResult, ensureChunks, ensureEventsForRange, runWrite, tasksFile],
   )
 
   const deleteEvent = useCallback(
     async (eventId: string) => {
-      if (!eventsFile) return
+      if (!eventsIndexRef.current) return
+      const chunkId = findChunkIdForEvent(chunksRef.current, eventId)
+      if (!chunkId) return
       await runWrite(async () => {
-        const t = nowIso()
-        await persistEvents({
-          events: eventsFile.events.filter((e) => e.id !== eventId),
-          updatedAt: t,
-        })
+        const index = eventsIndexRef.current
+        if (!index) return
+        const list = (chunksRef.current[chunkId]?.events ?? []).filter(
+          (e) => e.id !== eventId,
+        )
+        const result = await persistChunkUpdates({ [chunkId]: list }, index)
+        applyPersistResult(result)
       })
     },
-    [eventsFile, persistEvents, runWrite],
+    [applyPersistResult, runWrite],
   )
 
   const startTask = useCallback(
     async (taskId: string) => {
-      if (!tasksFile || !eventsFile) return
+      if (!tasksFile || !eventsIndexRef.current) return
       const task = tasksFile.tasks.find((x) => x.id === taskId)
       if (!task) return
       const folder = tasksFile.folders.find((x) => x.id === task.folderId)
       if (!folder) return
 
       await runWrite(async () => {
+        const index = eventsIndexRef.current
+        if (!index) return
         const endMs = Date.now()
         const t = nowIso(new Date(endMs))
-        const closed = closeOrDiscardOpen(eventsFile.events, endMs, t)
+        const dirty = closeOpenAcrossChunks(chunksRef.current, endMs, t)
+        const qid = quarterIdFromIso(t)
+        const base = dirty[qid] ?? chunksRef.current[qid]?.events ?? []
         const started: Event = {
           id: newId(),
           taskId: task.id,
@@ -575,24 +701,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           createdAt: t,
           updatedAt: t,
         }
-        await persistEvents({
-          events: [...closed, started],
-          updatedAt: t,
-        })
+        dirty[qid] = [...base, started]
+        const result = await persistChunkUpdates(dirty, index)
+        applyPersistResult(result)
       })
     },
-    [closeOrDiscardOpen, eventsFile, persistEvents, runWrite, tasksFile],
+    [applyPersistResult, runWrite, tasksFile],
   )
 
   const stopCurrent = useCallback(async () => {
-    if (!eventsFile) return
+    if (!eventsIndexRef.current) return
     await runWrite(async () => {
+      const index = eventsIndexRef.current
+      if (!index) return
       const endMs = Date.now()
       const t = nowIso(new Date(endMs))
-      const events = closeOrDiscardOpen(eventsFile.events, endMs, t)
-      await persistEvents({ events, updatedAt: t })
+      const dirty = closeOpenAcrossChunks(chunksRef.current, endMs, t)
+      if (Object.keys(dirty).length === 0) return
+      const result = await persistChunkUpdates(dirty, index)
+      applyPersistResult(result)
     })
-  }, [closeOrDiscardOpen, eventsFile, persistEvents, runWrite])
+  }, [applyPersistResult, runWrite])
 
   const saveLogPrefs = useCallback(
     async (prefs: LogPrefs) => {
@@ -619,12 +748,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     () => [...(tasksFile?.tasks ?? [])].sort((a, b) => a.sortOrder - b.sortOrder),
     [tasksFile],
   )
-  const events = useMemo(() => {
-    const list = [...(eventsFile?.events ?? [])]
-    return list.sort(
-      (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
-    )
-  }, [eventsFile])
+  const events = useMemo(() => mergeChunkEvents(chunks), [chunks])
+  const hasMoreOlderEvents = useMemo(
+    () => hasMoreOlderChunks(eventsIndex, chunks),
+    [eventsIndex, chunks],
+  )
   const current = useMemo(
     () => events.find((e) => e.endedAt === null) ?? null,
     [events],
@@ -643,8 +771,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       events,
       current,
       logPrefs,
+      hasMoreOlderEvents,
     }),
-    [loading, error, folders, tasks, events, current, logPrefs],
+    [loading, error, folders, tasks, events, current, logPrefs, hasMoreOlderEvents],
   )
 
   const actions = useMemo<StoreActions>(
@@ -664,6 +793,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       deleteTask,
       startTask,
       stopCurrent,
+      loadOlderEvents,
+      ensureEventsForRange,
     }),
     [
       clearError,
@@ -681,6 +812,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       deleteTask,
       startTask,
       stopCurrent,
+      loadOlderEvents,
+      ensureEventsForRange,
     ],
   )
 

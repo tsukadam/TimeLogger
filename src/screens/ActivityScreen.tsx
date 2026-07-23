@@ -100,8 +100,9 @@ function msToInputs(ms: number): { date: string; time: string } {
 
 export function ActivityScreen() {
   const busy = useStoreBusy()
-  const { loading, error, events, tasks, folders } = useStoreData()
-  const { clearError } = useStoreActions()
+  const { loading, error, events, tasks, folders, hasMoreOlderEvents } =
+    useStoreData()
+  const { clearError, loadOlderEvents } = useStoreActions()
   const [visible, setVisible] = useState(PAGE)
   const [sheet, setSheet] = useState<SheetState>({ type: 'closed' })
   const sentinelRef = useRef<HTMLDivElement | null>(null)
@@ -137,7 +138,7 @@ export function ActivityScreen() {
     return [...map.values()]
   }, [pageEvents])
 
-  const hasMore = visible < events.length
+  const hasMore = visible < events.length || hasMoreOlderEvents
 
   useEffect(() => {
     const node = sentinelRef.current
@@ -145,15 +146,29 @@ export function ActivityScreen() {
     const root = findScrollParent(node)
     const io = new IntersectionObserver(
       (entries) => {
-        if (entries.some((e) => e.isIntersecting)) {
+        if (!entries.some((e) => e.isIntersecting)) return
+        if (visible < events.length) {
           setVisible((n) => Math.min(n + PAGE, events.length))
+          return
+        }
+        if (hasMoreOlderEvents) {
+          void loadOlderEvents().then(() => {
+            setVisible((n) => n + PAGE)
+          })
         }
       },
       { root, rootMargin: '120px' },
     )
     io.observe(node)
     return () => io.disconnect()
-  }, [hasMore, events.length, groups.length])
+  }, [
+    hasMore,
+    hasMoreOlderEvents,
+    events.length,
+    visible,
+    groups.length,
+    loadOlderEvents,
+  ])
 
   function openEdit(ev: Event) {
     setSheet({ type: 'edit', id: ev.id })
