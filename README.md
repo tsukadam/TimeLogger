@@ -36,6 +36,10 @@ npm run build      # dist/ に出力（ベースパスは VITE_BASE_PATH で変�
 
 `dist/` と `api/`、`data/` をサーバーに配置する。
 
+## 注意
+
+本体のURLを知っている人は誰でもデータにアクセスでき、編集できるので、置き場所には気を付けてください。
+
 ## ライセンス
 
 MIT License。詳細は [LICENSE](LICENSE) を参照。
