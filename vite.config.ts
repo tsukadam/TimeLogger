@@ -54,7 +54,8 @@ export default defineConfig(({ command }) => ({
       },
     }),
   ],
-  base: command === 'serve' ? '/' : process.env.VITE_BASE_PATH || '/timelogger/',
+  // 本番は相対 base。親パスを変えても（秘匿サブディレクトリ等）再ビルド不要
+  base: command === 'serve' ? '/' : process.env.VITE_BASE_PATH || './',
   server: {
     proxy: {
       '/api': 'http://127.0.0.1:8080',

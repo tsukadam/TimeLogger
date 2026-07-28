@@ -2,14 +2,14 @@
 setlocal
 REM Production build for the web server.
 REM Creates deploy layout in build\timelogger\ (cleaned every run) and emits build\timelogger.zip.
-REM Extract the zip at the web root to get /timelogger/.
+REM Extract under any parent path (e.g. /secret/timelogger/). Assets use relative base.
 REM
 REM data\ is NOT included by default, so uploading the output never overwrites
 REM the logs already on the server. For the very first deploy run:
 REM   build-web.bat withdata
 cd /d %~dp0
 
-set VITE_BASE_PATH=/timelogger/
+set VITE_BASE_PATH=./
 call npm run build
 if errorlevel 1 (
   echo build failed
