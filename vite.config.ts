@@ -7,6 +7,7 @@ export default defineConfig(({ command }) => ({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      manifestFilename: 'manifest-v4.webmanifest',
       includeAssets: [
         'favicon-v3.svg',
         'apple-touch-icon-v3.png',
