@@ -1,8 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  EventEditModal,
-  type EventFormSeed,
-} from '../components/EventEditModal'
+import { EventEditModal } from '../components/EventEditModal'
 import { TimeWheelPopover } from '../components/TimeField'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { FolderIcon } from '../components/FolderIcon'
@@ -15,8 +12,8 @@ import {
   formatDateDivider,
   formatEventRange,
   isoToTimeInput,
-  nowIso,
 } from '../lib/time'
+import { rectToAnchor, type PanelAnchor } from '../lib/placePanel'
 import { useNowTick } from '../lib/useNowTick'
 import { useStoreActions, useStoreBusy, useStoreData } from '../state/Store'
 import { boundsForJoin } from '../state/eventSnap'
@@ -25,8 +22,6 @@ import { resolveDisplay } from './log/aggregate'
 import styles from './ActivityScreen.module.css'
 
 const PAGE = 50
-const HOLE_WINDOW_MS = 12 * 60 * 60 * 1000
-const HOLE_MIN_MS = 60 * 1000
 
 type DayGroup = {
   key: string
@@ -34,10 +29,7 @@ type DayGroup = {
   events: Event[]
 }
 
-type SheetState =
-  | { type: 'closed' }
-  | { type: 'edit'; id: string }
-  | { type: 'add'; initial: EventFormSeed }
+type SheetState = { type: 'closed' } | { type: 'edit'; id: string }
 
 function findScrollParent(el: HTMLElement | null): Element | null {
   let cur: HTMLElement | null = el
@@ -47,59 +39,6 @@ function findScrollParent(el: HTMLElement | null): Element | null {
     cur = cur.parentElement
   }
   return null
-}
-
-/**
- * 直近12時間の記録の「穴」（1分以上の空白）のうち最古を返す。
- * 無ければ null（＝押した時点の時刻をデフォルトにする）。
- */
-function findOldestHole(
-  events: Event[],
-  nowMs: number,
-): { start: number; end: number } | null {
-  const windowStart = nowMs - HOLE_WINDOW_MS
-  const intervals = events
-    .map((e) => ({
-      s: new Date(e.startedAt).getTime(),
-      e: e.endedAt ? new Date(e.endedAt).getTime() : nowMs,
-    }))
-    .filter(
-      (x) =>
-        Number.isFinite(x.s) &&
-        Number.isFinite(x.e) &&
-        x.e > windowStart &&
-        x.s < nowMs,
-    )
-    .sort((a, b) => a.s - b.s)
-  if (intervals.length === 0) return null
-
-  const merged: { s: number; e: number }[] = []
-  for (const x of intervals) {
-    const last = merged[merged.length - 1]
-    if (last && x.s <= last.e) last.e = Math.max(last.e, x.e)
-    else merged.push({ ...x })
-  }
-
-  const holes: { s: number; e: number }[] = []
-  // 窓の先頭〜最初の記録
-  holes.push({ s: windowStart, e: merged[0]!.s })
-  for (let i = 0; i < merged.length - 1; i++) {
-    holes.push({ s: merged[i]!.e, e: merged[i + 1]!.s })
-  }
-  // 最後の記録〜現在（記録中があればここは埋まっている）
-  holes.push({ s: merged[merged.length - 1]!.e, e: nowMs })
-
-  for (const h of holes) {
-    const s = Math.max(h.s, windowStart)
-    const e = Math.min(h.e, nowMs)
-    if (e - s >= HOLE_MIN_MS) return { start: s, end: e }
-  }
-  return null
-}
-
-function msToInputs(ms: number): { date: string; time: string } {
-  const iso = nowIso(new Date(ms))
-  return { date: dateKey(iso), time: isoToTimeInput(iso) }
 }
 
 export function ActivityScreen() {
@@ -117,7 +56,7 @@ export function ActivityScreen() {
     time: string
     minMs: number
     maxMs: number
-    pos: { top: number; left: number }
+    anchor: PanelAnchor
   } | null>(null)
   const sentinelRef = useRef<HTMLDivElement | null>(null)
 
@@ -191,17 +130,6 @@ export function ActivityScreen() {
   async function openJoin(newer: Event, older: Event, btn: HTMLElement) {
     try {
       const iso = await alignBoundary(older.id, newer.id)
-      const r = btn.getBoundingClientRect()
-      const panelW = 280
-      const left = Math.min(
-        Math.max(8, r.left + r.width / 2 - panelW / 2),
-        window.innerWidth - panelW - 8,
-      )
-      const below = r.bottom + 6
-      const top =
-        below + 180 > window.innerHeight - 8
-          ? Math.max(8, r.top - 180 - 6)
-          : below
       const nowMs = Date.now()
       const bound = boundsForJoin({
         older: { ...older, endedAt: iso },
@@ -215,33 +143,11 @@ export function ActivityScreen() {
         time: isoToTimeInput(iso),
         minMs: bound.minMs,
         maxMs: bound.maxMs,
-        pos: { top, left },
+        anchor: rectToAnchor(btn.getBoundingClientRect()),
       })
     } catch {
       /* Store が表示 */
     }
-  }
-
-  function openAdd() {
-    const pressMs = Date.now()
-    const hole = findOldestHole(events, pressMs)
-    const start = msToInputs(hole ? hole.start : pressMs)
-    const end = msToInputs(hole ? hole.end : pressMs)
-
-    const latest = events[0]
-    const latestTask = latest ? tasks.find((t) => t.id === latest.taskId) : null
-    const task = latestTask ?? tasks[0] ?? null
-    setSheet({
-      type: 'add',
-      initial: {
-        folderId: task?.folderId ?? folders[0]?.id ?? '',
-        taskId: task?.id ?? '',
-        startDate: start.date,
-        startTime: start.time,
-        endDate: end.date,
-        endTime: end.time,
-      },
-    })
   }
 
   const closeSheet = () => setSheet({ type: 'closed' })
@@ -345,24 +251,12 @@ export function ActivityScreen() {
         </>
       )}
 
-      <div className={chrome.addBar}>
-        <button
-          type="button"
-          className={chrome.plus}
-          aria-label="記録を追加"
-          disabled={busy || tasks.length === 0}
-          onClick={openAdd}
-        >
-          ＋
-        </button>
-      </div>
-
       {join && (
         <TimeWheelPopover
           value={join.time}
           date={join.date}
           bound={{ minMs: join.minMs, maxMs: join.maxMs }}
-          pos={join.pos}
+          anchor={join.anchor}
           onChange={(time) =>
             setJoin((j) => (j ? { ...j, time } : j))
           }
@@ -385,13 +279,6 @@ export function ActivityScreen() {
       )}
       {sheet.type === 'edit' && (
         <EventEditModal eventId={sheet.id} onClose={closeSheet} />
-      )}
-      {sheet.type === 'add' && (
-        <EventEditModal
-          mode="add"
-          initial={sheet.initial}
-          onClose={closeSheet}
-        />
       )}
     </section>
   )

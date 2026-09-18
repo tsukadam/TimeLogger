@@ -1,10 +1,59 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { TimeWheel } from './TimeWheel'
 import { useEscapeClose } from '../lib/useOutsideClose'
 import { useScrollLock } from '../lib/useScrollLock'
+import {
+  placePanel,
+  rectToAnchor,
+  type PanelAnchor,
+  type PanelPos,
+} from '../lib/placePanel'
 import styles from './TimeField.module.css'
 import type { TimeBound } from '../state/eventSnap'
+
+const PANEL_W = 280
+const PANEL_H = 180
+
+function posFromAnchor(anchor: PanelAnchor, size?: { width: number; height: number }): PanelPos {
+  return placePanel(anchor, size ?? { width: PANEL_W, height: PANEL_H })
+}
+
+function TimeWheelDialog({
+  pos,
+  panelRef,
+  value,
+  onChange,
+  onDayChange,
+  date,
+  bound,
+}: {
+  pos: PanelPos
+  panelRef: RefObject<HTMLDivElement | null>
+  value: string
+  onChange: (v: string) => void
+  onDayChange?: (deltaDays: number) => void
+  date?: string
+  bound?: TimeBound
+}) {
+  return (
+    <div
+      ref={panelRef}
+      className={styles.panel}
+      style={{ top: pos.top, left: pos.left, width: pos.width }}
+      role="dialog"
+      aria-label="時刻"
+    >
+      <TimeWheel
+        value={value}
+        onChange={onChange}
+        onDayChange={onDayChange}
+        date={date}
+        bound={bound}
+      />
+    </div>
+  )
+}
 
 /** タップでむき出しのドラムロール。外側タップでその値を確定 */
 export function TimeField({
@@ -31,7 +80,9 @@ export function TimeField({
   const [draft, setDraft] = useState(value)
   const draftRef = useRef(value)
   const rootRef = useRef<HTMLDivElement | null>(null)
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const anchorRef = useRef<PanelAnchor | null>(null)
+  const [pos, setPos] = useState<PanelPos | null>(null)
 
   draftRef.current = draft
   useScrollLock(open)
@@ -48,21 +99,21 @@ export function TimeField({
     }
   }, [open, value])
 
-  useEffect(() => {
-    if (!open || !rootRef.current) return
-    const r = rootRef.current.getBoundingClientRect()
-    const panelW = 280
-    const left = Math.min(
-      Math.max(8, r.left + r.width / 2 - panelW / 2),
-      window.innerWidth - panelW - 8,
+  useLayoutEffect(() => {
+    if (!open || !panelRef.current || !anchorRef.current) return
+    const r = panelRef.current.getBoundingClientRect()
+    const next = posFromAnchor(anchorRef.current, {
+      width: r.width,
+      height: r.height,
+    })
+    setPos((cur) =>
+      cur &&
+      Math.abs(cur.left - next.left) < 0.5 &&
+      Math.abs(cur.top - next.top) < 0.5 &&
+      Math.abs(cur.width - next.width) < 0.5
+        ? cur
+        : next,
     )
-    // 欄の下に出す。画面下にはみ出すなら上側へ
-    const below = r.bottom + 6
-    const top =
-      below + 180 > window.innerHeight - 8
-        ? Math.max(8, r.top - 180 - 6)
-        : below
-    setPos({ top, left })
   }, [open])
 
   useEscapeClose(open, commitClose)
@@ -76,8 +127,15 @@ export function TimeField({
         aria-label={ariaLabel ?? '時刻を選ぶ'}
         aria-expanded={open}
         onClick={() => {
-          if (open) commitClose()
-          else setOpen(true)
+          if (open) {
+            commitClose()
+            return
+          }
+          if (!rootRef.current) return
+          const anchor = rectToAnchor(rootRef.current.getBoundingClientRect())
+          anchorRef.current = anchor
+          setPos(posFromAnchor(anchor))
+          setOpen(true)
         }}
       >
         <span className={styles.value}>{value || '--:--:--'}</span>
@@ -99,23 +157,18 @@ export function TimeField({
               aria-label="確定して閉じる"
               onClick={commitClose}
             />
-            <div
-              className={styles.panel}
-              style={{ top: pos.top, left: pos.left }}
-              role="dialog"
-              aria-label="時刻"
-            >
-              <TimeWheel
-                value={draft}
-                onChange={(v) => {
-                  setDraft(v)
-                  draftRef.current = v
-                }}
-                onDayChange={onDayChange}
-                date={date}
-                bound={bound}
-              />
-            </div>
+            <TimeWheelDialog
+              pos={pos}
+              panelRef={panelRef}
+              value={draft}
+              onChange={(v) => {
+                setDraft(v)
+                draftRef.current = v
+              }}
+              onDayChange={onDayChange}
+              date={date}
+              bound={bound}
+            />
           </>,
           document.body,
         )}
@@ -128,7 +181,7 @@ export function TimeWheelPopover({
   value,
   date,
   bound,
-  pos,
+  anchor,
   onChange,
   onDayChange,
   onClose,
@@ -136,13 +189,15 @@ export function TimeWheelPopover({
   value: string
   date: string
   bound: TimeBound
-  pos: { top: number; left: number }
+  anchor: PanelAnchor
   onChange: (v: string) => void
   onDayChange?: (deltaDays: number) => void
   onClose: (value: string) => void
 }) {
   const draftRef = useRef(value)
   draftRef.current = value
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const [pos, setPos] = useState<PanelPos>(() => posFromAnchor(anchor))
   useScrollLock(true)
   const commitClose = () => {
     const v = draftRef.current
@@ -150,6 +205,21 @@ export function TimeWheelPopover({
     onClose(v)
   }
   useEscapeClose(true, commitClose)
+
+  useLayoutEffect(() => {
+    if (!panelRef.current) return
+    const r = panelRef.current.getBoundingClientRect()
+    const next = posFromAnchor(anchor, { width: r.width, height: r.height })
+    setPos((cur) =>
+      cur &&
+      Math.abs(cur.left - next.left) < 0.5 &&
+      Math.abs(cur.top - next.top) < 0.5 &&
+      Math.abs(cur.width - next.width) < 0.5
+        ? cur
+        : next,
+    )
+  }, [anchor])
+
   return createPortal(
     <>
       <button
@@ -158,23 +228,18 @@ export function TimeWheelPopover({
         aria-label="確定して閉じる"
         onClick={commitClose}
       />
-      <div
-        className={styles.panel}
-        style={{ top: pos.top, left: pos.left }}
-        role="dialog"
-        aria-label="時刻"
-      >
-        <TimeWheel
-          value={value}
-          onChange={(v) => {
-            draftRef.current = v
-            onChange(v)
-          }}
-          onDayChange={onDayChange}
-          date={date}
-          bound={bound}
-        />
-      </div>
+      <TimeWheelDialog
+        pos={pos}
+        panelRef={panelRef}
+        value={value}
+        onChange={(v) => {
+          draftRef.current = v
+          onChange(v)
+        }}
+        onDayChange={onDayChange}
+        date={date}
+        bound={bound}
+      />
     </>,
     document.body,
   )

@@ -7,12 +7,13 @@
 .trigger {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   width: 100%;
   min-width: 0;
   height: 44px;
   box-sizing: border-box;
-  text-align: left;
+  text-align: center;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 0 12px;
@@ -31,6 +32,7 @@
 .value {
   min-width: 0;
   flex: 1;
+  text-align: center;
 }
 
 .chevron {
@@ -65,6 +67,7 @@
   position: fixed;
   z-index: 400;
   width: 280px;
+  max-width: calc(100vw - 16px);
   padding: 10px;
   border-radius: 12px;
   background: var(--panel);

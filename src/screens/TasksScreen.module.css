@@ -2,8 +2,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  /* 下部固定バーぶんの逃げ */
-  padding-bottom: calc(48px + var(--safe-bottom));
+  padding-bottom: 8px;
 }
 
 /* 記録中タスクが画面外にあるときの案内ピル（高さ0で挟み、レイアウトに影響させない） */
@@ -22,8 +21,7 @@
 }
 
 .stickyBottom {
-  /* 下部固定バーの上に出す */
-  bottom: calc(48px + var(--safe-bottom));
+  bottom: 0;
   margin-top: -12px;
 }
 
@@ -101,6 +99,7 @@
 }
 
 .orderBtn {
+  position: relative;
   width: 28px;
   height: 28px;
   display: grid;
@@ -113,6 +112,13 @@
   line-height: 1;
   padding: 0;
   cursor: pointer;
+}
+
+/* 見た目は 28px のまま、判定だけ広げる（隣の ↑↓ と重ならないよう横は控えめ） */
+.orderBtn::before {
+  content: '';
+  position: absolute;
+  inset: -10px -2px;
 }
 
 .orderBtn:disabled {
@@ -335,4 +341,10 @@
   border-color: var(--accent);
   color: var(--fg);
   font-weight: 650;
+}
+
+.listPlus {
+  display: flex;
+  justify-content: center;
+  padding: 4px 16px 8px;
 }

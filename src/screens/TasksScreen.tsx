@@ -772,6 +772,18 @@ export function TasksScreen() {
         <p className={styles.hint}>＋ からフォルダを追加</p>
       )}
 
+      <div className={styles.listPlus}>
+        <button
+          type="button"
+          className={chrome.plus}
+          aria-label="追加"
+          disabled={busy}
+          onClick={openAdd}
+        >
+          ＋
+        </button>
+      </div>
+
       {runningOff === 'below' && (
         <div className={styles.stickyBottom}>
           <button
@@ -783,18 +795,6 @@ export function TasksScreen() {
           </button>
         </div>
       )}
-
-      <div className={chrome.addBar}>
-        <button
-          type="button"
-          className={chrome.plus}
-          aria-label="追加"
-          disabled={busy}
-          onClick={openAdd}
-        >
-          ＋
-        </button>
-      </div>
 
       <Modal
         open={sheetOpen}
