@@ -7,12 +7,12 @@ export default defineConfig(({ command }) => ({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      manifestFilename: 'manifest-v6.webmanifest',
+      manifestFilename: 'manifest-v7.webmanifest',
       includeAssets: [
         'favicon-v3.svg',
-        'apple-touch-icon-v6.png',
-        'pwa-icon-v6-192.png',
-        'pwa-icon-v6-512.png',
+        'apple-touch-icon-v7.png',
+        'pwa-icon-v7-192.png',
+        'pwa-icon-v7-512.png',
       ],
       manifest: {
         name: 'TimeLogger',
@@ -28,13 +28,13 @@ export default defineConfig(({ command }) => ({
         scope: './',
         icons: [
           {
-            src: 'pwa-icon-v6-512.png',
+            src: 'pwa-icon-v7-512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable',
           },
           {
-            src: 'pwa-icon-v6-192.png',
+            src: 'pwa-icon-v7-192.png',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any maskable',

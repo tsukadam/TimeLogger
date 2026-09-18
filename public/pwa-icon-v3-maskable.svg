@@ -10,9 +10,11 @@
     </linearGradient>
   </defs>
   <rect width="512" height="512" fill="url(#bg)"/>
-  <rect x="226" y="70" width="60" height="34" rx="12" fill="url(#body)"/>
-  <rect x="240" y="98" width="32" height="40" fill="url(#body)"/>
-  <circle cx="256" cy="292" r="146" stroke="url(#body)" stroke-width="36"/>
-  <path d="M256 292 320 228" stroke="url(#body)" stroke-width="34" stroke-linecap="round"/>
-  <circle cx="256" cy="292" r="26" fill="url(#body)"/>
+  <g transform="translate(256 256) scale(0.7471264368) translate(-256 -256)">
+    <rect x="226" y="70" width="60" height="34" rx="12" fill="url(#body)"/>
+    <rect x="240" y="98" width="32" height="40" fill="url(#body)"/>
+    <circle cx="256" cy="292" r="146" stroke="url(#body)" stroke-width="36"/>
+    <path d="M256 292 320 228" stroke="url(#body)" stroke-width="34" stroke-linecap="round"/>
+    <circle cx="256" cy="292" r="26" fill="url(#body)"/>
+  </g>
 </svg>
