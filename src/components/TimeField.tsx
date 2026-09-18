@@ -4,6 +4,7 @@ import { TimeWheel } from './TimeWheel'
 import { useEscapeClose } from '../lib/useOutsideClose'
 import { useScrollLock } from '../lib/useScrollLock'
 import styles from './TimeField.module.css'
+import type { TimeBound } from '../state/eventSnap'
 
 /** タップでむき出しのドラムロール。外側タップでその値を確定 */
 export function TimeField({
@@ -11,6 +12,9 @@ export function TimeField({
   onChange,
   onDayChange,
   disabled,
+  hideChevron,
+  date,
+  bound,
   'aria-label': ariaLabel,
 }: {
   value: string
@@ -18,6 +22,9 @@ export function TimeField({
   /** ロールが 23→0 / 0→23 を跨いだとき、日付を前後させるために呼ばれる */
   onDayChange?: (deltaDays: number) => void
   disabled?: boolean
+  hideChevron?: boolean
+  date?: string
+  bound?: TimeBound
   'aria-label'?: string
 }) {
   const [open, setOpen] = useState(false)
@@ -74,9 +81,11 @@ export function TimeField({
         }}
       >
         <span className={styles.value}>{value || '--:--:--'}</span>
-        <span className={styles.chevron} aria-hidden>
-          ▾
-        </span>
+        {!hideChevron && (
+          <span className={styles.chevron} aria-hidden>
+            ▾
+          </span>
+        )}
       </button>
 
       {open &&
@@ -103,11 +112,70 @@ export function TimeField({
                   draftRef.current = v
                 }}
                 onDayChange={onDayChange}
+                date={date}
+                bound={bound}
               />
             </div>
           </>,
           document.body,
         )}
     </div>
+  )
+}
+
+/** Activity の ⇔ など、トリガー無しで同じドラムを出す */
+export function TimeWheelPopover({
+  value,
+  date,
+  bound,
+  pos,
+  onChange,
+  onDayChange,
+  onClose,
+}: {
+  value: string
+  date: string
+  bound: TimeBound
+  pos: { top: number; left: number }
+  onChange: (v: string) => void
+  onDayChange?: (deltaDays: number) => void
+  onClose: (value: string) => void
+}) {
+  const draftRef = useRef(value)
+  draftRef.current = value
+  useScrollLock(true)
+  const commitClose = () => {
+    const v = draftRef.current
+    onChange(v)
+    onClose(v)
+  }
+  useEscapeClose(true, commitClose)
+  return createPortal(
+    <>
+      <button
+        type="button"
+        className={styles.overlay}
+        aria-label="確定して閉じる"
+        onClick={commitClose}
+      />
+      <div
+        className={styles.panel}
+        style={{ top: pos.top, left: pos.left }}
+        role="dialog"
+        aria-label="時刻"
+      >
+        <TimeWheel
+          value={value}
+          onChange={(v) => {
+            draftRef.current = v
+            onChange(v)
+          }}
+          onDayChange={onDayChange}
+          date={date}
+          bound={bound}
+        />
+      </div>
+    </>,
+    document.body,
   )
 }

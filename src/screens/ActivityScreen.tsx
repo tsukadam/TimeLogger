@@ -3,11 +3,14 @@ import {
   EventEditModal,
   type EventFormSeed,
 } from '../components/EventEditModal'
+import { TimeWheelPopover } from '../components/TimeField'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { FolderIcon } from '../components/FolderIcon'
 import chrome from '../components/screenChrome.module.css'
 import {
+  addDaysKey,
   dateKey,
+  dateTimeInputToIso,
   durationLabel,
   formatDateDivider,
   formatEventRange,
@@ -16,6 +19,7 @@ import {
 } from '../lib/time'
 import { useNowTick } from '../lib/useNowTick'
 import { useStoreActions, useStoreBusy, useStoreData } from '../state/Store'
+import { boundsForJoin } from '../state/eventSnap'
 import type { Event } from '../types'
 import { resolveDisplay } from './log/aggregate'
 import styles from './ActivityScreen.module.css'
@@ -102,9 +106,19 @@ export function ActivityScreen() {
   const busy = useStoreBusy()
   const { loading, error, events, tasks, folders, hasMoreOlderEvents } =
     useStoreData()
-  const { clearError, loadOlderEvents } = useStoreActions()
+  const { clearError, loadOlderEvents, alignBoundary, setBoundary } =
+    useStoreActions()
   const [visible, setVisible] = useState(PAGE)
   const [sheet, setSheet] = useState<SheetState>({ type: 'closed' })
+  const [join, setJoin] = useState<{
+    olderId: string
+    newerId: string
+    date: string
+    time: string
+    minMs: number
+    maxMs: number
+    pos: { top: number; left: number }
+  } | null>(null)
   const sentinelRef = useRef<HTMLDivElement | null>(null)
 
   const hasLive = useMemo(() => events.some((e) => e.endedAt === null), [events])
@@ -174,6 +188,40 @@ export function ActivityScreen() {
     setSheet({ type: 'edit', id: ev.id })
   }
 
+  async function openJoin(newer: Event, older: Event, btn: HTMLElement) {
+    try {
+      const iso = await alignBoundary(older.id, newer.id)
+      const r = btn.getBoundingClientRect()
+      const panelW = 280
+      const left = Math.min(
+        Math.max(8, r.left + r.width / 2 - panelW / 2),
+        window.innerWidth - panelW - 8,
+      )
+      const below = r.bottom + 6
+      const top =
+        below + 180 > window.innerHeight - 8
+          ? Math.max(8, r.top - 180 - 6)
+          : below
+      const nowMs = Date.now()
+      const bound = boundsForJoin({
+        older: { ...older, endedAt: iso },
+        newer: { ...newer, startedAt: iso },
+        nowMs,
+      })
+      setJoin({
+        olderId: older.id,
+        newerId: newer.id,
+        date: dateKey(iso),
+        time: isoToTimeInput(iso),
+        minMs: bound.minMs,
+        maxMs: bound.maxMs,
+        pos: { top, left },
+      })
+    } catch {
+      /* Store が表示 */
+    }
+  }
+
   function openAdd() {
     const pressMs = Date.now()
     const hole = findOldestHole(events, pressMs)
@@ -210,7 +258,7 @@ export function ActivityScreen() {
         <p className={chrome.status}>まだ記録がありません。</p>
       ) : (
         <>
-          {groups.map((g) => (
+          {groups.map((g, gi) => (
             <div key={g.key} className={styles.dayGroup}>
               <div className={styles.dateRule}>
                 <span className={styles.dateRuleLine} />
@@ -218,10 +266,19 @@ export function ActivityScreen() {
                 <span className={styles.dateRuleLine} />
               </div>
               <ul className={styles.list}>
-                {g.events.map((ev) => {
+                {g.events.map((ev, ei) => {
                   const display = resolveDisplay(ev, taskById, folderById)
+                  const nextSame = g.events[ei + 1]
+                  const nextOther = nextSame
+                    ? null
+                    : (groups[gi + 1]?.events[0] ?? null)
+                  const older = nextSame ?? nextOther
+                  const across = !nextSame && nextOther != null
                   return (
-                    <li key={ev.id}>
+                    <li
+                      key={ev.id}
+                      className={`${styles.item}${across ? ` ${styles.itemAcross}` : ''}`}
+                    >
                       <button
                         type="button"
                         className={styles.row}
@@ -256,6 +313,27 @@ export function ActivityScreen() {
                           {durationLabel(ev.startedAt, ev.endedAt, now)}
                         </span>
                       </button>
+                      {older && (
+                        <button
+                          type="button"
+                          className={styles.joinBtn}
+                          aria-label="境界時刻を編集"
+                          disabled={busy}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void openJoin(ev, older, e.currentTarget)
+                          }}
+                        >
+                          <svg
+                            className={styles.joinIcon}
+                            viewBox="0 0 12 12"
+                            aria-hidden
+                          >
+                            <path d="M6 1.15 10.35 4.95H1.65Z" />
+                            <path d="M6 10.85 1.65 7.05h8.7Z" />
+                          </svg>
+                        </button>
+                      )}
                     </li>
                   )
                 })}
@@ -279,6 +357,32 @@ export function ActivityScreen() {
         </button>
       </div>
 
+      {join && (
+        <TimeWheelPopover
+          value={join.time}
+          date={join.date}
+          bound={{ minMs: join.minMs, maxMs: join.maxMs }}
+          pos={join.pos}
+          onChange={(time) =>
+            setJoin((j) => (j ? { ...j, time } : j))
+          }
+          onDayChange={(d) =>
+            setJoin((j) =>
+              j ? { ...j, date: addDaysKey(j.date, d) } : j,
+            )
+          }
+          onClose={(time) => {
+            const j = join
+            setJoin(null)
+            if (!j) return
+            void setBoundary(
+              j.olderId,
+              j.newerId,
+              dateTimeInputToIso(j.date, time),
+            )
+          }}
+        />
+      )}
       {sheet.type === 'edit' && (
         <EventEditModal eventId={sheet.id} onClose={closeSheet} />
       )}

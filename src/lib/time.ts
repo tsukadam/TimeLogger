@@ -3,6 +3,9 @@ const TZ = 'Asia/Tokyo'
 /** 経過1秒未満は誤操作として記録に残さない（ms 精度で判定） */
 export const MIN_RECORD_MS = 1000
 
+/** 手入力時刻の「未来」判定の猶予（入力中の時間経過を許容） */
+export const FUTURE_GRACE_MS = 60000
+
 /** 1日の長さ */
 export const DAY_MS = 86400000
 export const DAY_SEC = 86400

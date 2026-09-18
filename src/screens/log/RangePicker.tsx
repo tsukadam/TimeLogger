@@ -7,7 +7,6 @@ import form from '../../components/form.module.css'
 import {
   formatYmd,
   monthKey,
-  weekdayShort,
   ymParts,
   dayStartMs,
   DAY_MS,
@@ -154,8 +153,7 @@ export function RangePicker({
                 setViewYm(ymParts(draft.customStart))
               }}
             >
-              開始 {formatYmd(draft.customStart)}（
-              {weekdayShort(draft.customStart)}）
+              {formatYmd(draft.customStart)}
             </button>
             <button
               type="button"
@@ -169,8 +167,7 @@ export function RangePicker({
                 setViewYm(ymParts(draft.customEnd))
               }}
             >
-              終了 {formatYmd(draft.customEnd)}（
-              {weekdayShort(draft.customEnd)}）
+              {formatYmd(draft.customEnd)}
             </button>
           </div>
         )}

@@ -1,8 +1,7 @@
-import { MIN_RECORD_MS, formatEventRange } from '../lib/time'
+import { FUTURE_GRACE_MS, MIN_RECORD_MS, formatEventRange } from '../lib/time'
 import type { Event } from '../types'
 
-/** 手入力時刻の「未来」判定の猶予（入力中の時間経過を許容） */
-export const FUTURE_GRACE_MS = 60000
+export { FUTURE_GRACE_MS }
 
 /**
  * 既存記録との時間重複を探す。記録中（endedAt null）は現在時刻まで

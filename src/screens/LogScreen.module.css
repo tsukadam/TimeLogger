@@ -628,7 +628,8 @@
   color: var(--muted);
   font-size: 0.88rem;
   font-variant-numeric: tabular-nums;
-  text-align: left;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .customTargetOn {

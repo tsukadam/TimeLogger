@@ -169,6 +169,7 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
+  overflow-anchor: none;
   /* スクロールバーの有無で内容幅が動かないよう常にガター確保 */
   scrollbar-gutter: stable;
   padding-bottom: calc(16px + var(--safe-bottom));

@@ -20,6 +20,7 @@ import {
   todayKey,
 } from '../lib/time'
 import { useNowTick } from '../lib/useNowTick'
+import { scrollChildToCenter } from '../lib/domScroll'
 import { useScrollLock } from '../lib/useScrollLock'
 import {
   useStoreActions,
@@ -224,7 +225,7 @@ export function TasksScreen() {
     )
     if (!(el instanceof HTMLElement)) return
     didFocusRunningRef.current = true
-    el.scrollIntoView({ block: 'center', behavior: 'auto' })
+    scrollChildToCenter(el, 'auto')
   }, [loading, current, folders, tasks])
 
   // タスク並び替え中の FLIP（ドラッグ中の行自体は動かさない）
@@ -415,9 +416,10 @@ export function TasksScreen() {
 
   const scrollToRunning = () => {
     if (!runningTaskId) return
-    document
-      .querySelector(`[data-task-id="${runningTaskId}"]`)
-      ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const el = rootRef.current?.querySelector(
+      `[data-task-id="${runningTaskId}"]`,
+    )
+    if (el instanceof HTMLElement) scrollChildToCenter(el, 'smooth')
   }
 
   function closeSheet() {

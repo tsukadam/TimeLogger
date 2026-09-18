@@ -23,6 +23,15 @@ import type {
 } from '../types'
 import { validateEventRange } from './eventValidation'
 import {
+  SNAP_MS,
+  alignBoundaryMs,
+  eventEndMs,
+  eventStartMs,
+  eventsChrono,
+  snapEventTimes,
+  type EventTimePatch,
+} from './eventSnap'
+import {
   type ChunkMap,
   fetchBootEvents,
   findChunkIdForEvent,
@@ -79,6 +88,8 @@ type StoreActions = {
   deleteTask: (taskId: string) => Promise<void>
   startTask: (taskId: string) => Promise<void>
   stopCurrent: () => Promise<void>
+  alignBoundary: (olderId: string, newerId: string) => Promise<string>
+  setBoundary: (olderId: string, newerId: string, iso: string) => Promise<void>
   loadOlderEvents: () => Promise<void>
   ensureEventsForRange: (startMs: number, endMs: number) => Promise<void>
 }
@@ -134,6 +145,55 @@ function closeOpenAcrossChunks(
     dirty[id] = closeOrDiscardOpen(file.events, endMs, endIso)
   }
   return dirty
+}
+
+function cloneChunkEvents(
+  chunks: ChunkMap,
+  id: string,
+  dirty: Map<string, Event[]>,
+): Event[] {
+  let list = dirty.get(id)
+  if (!list) {
+    list = [...(chunks[id]?.events ?? [])]
+    dirty.set(id, list)
+  }
+  return list
+}
+
+/** 複数記録の時刻パッチをチャンク更新にまとめる（開始四半期が変われば移動） */
+function chunkUpdatesForPatches(
+  chunks: ChunkMap,
+  patches: EventTimePatch[],
+  stamp: string,
+): Record<string, Event[]> {
+  const dirty = new Map<string, Event[]>()
+  const loc = new Map<string, string>()
+  for (const [cid, file] of Object.entries(chunks)) {
+    for (const ev of file.events) loc.set(ev.id, cid)
+  }
+  for (const p of patches) {
+    const fromId = loc.get(p.id)
+    if (!fromId) throw new Error('記録が見つかりません')
+    const fromList = cloneChunkEvents(chunks, fromId, dirty)
+    const i = fromList.findIndex((e) => e.id === p.id)
+    if (i < 0) throw new Error('記録が見つかりません')
+    const prev = fromList[i]!
+    const updated: Event = {
+      ...prev,
+      ...(p.startedAt !== undefined ? { startedAt: p.startedAt } : {}),
+      ...(p.endedAt !== undefined ? { endedAt: p.endedAt } : {}),
+      updatedAt: stamp,
+    }
+    const toId = quarterIdFromIso(updated.startedAt)
+    if (toId === fromId) {
+      fromList[i] = updated
+      continue
+    }
+    fromList.splice(i, 1)
+    cloneChunkEvents(chunks, toId, dirty).push(updated)
+    loc.set(p.id, toId)
+  }
+  return Object.fromEntries(dirty)
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -521,7 +581,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const folder = tasksFile.folders.find((x) => x.id === task.folderId)
       if (!folder) throw new Error('フォルダが見つかりません')
 
-      const startMs = new Date(patch.startedAt).getTime()
+      let startMs = new Date(patch.startedAt).getTime()
       const nowMs = Date.now()
       const endedAt = patch.endedAt
       // 記録中は現在時刻まで占有しているとみなす
@@ -532,6 +592,41 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         validateEndBound = true
       }
       await ensureEventsForRange(startMs, endMs)
+      const all = mergeChunkEvents(chunksRef.current)
+      const prevStored = all.find((e) => e.id === eventId)
+      let move: 'start' | 'end' | 'both' = 'both'
+      if (prevStored) {
+        const oldS = new Date(prevStored.startedAt).getTime()
+        const oldE = prevStored.endedAt
+          ? new Date(prevStored.endedAt).getTime()
+          : null
+        const startCh = startMs !== oldS
+        const endCh =
+          endedAt !== null && oldE !== null && endMs !== oldE
+        if (startCh && !endCh) move = 'start'
+        else if (!startCh && endCh) move = 'end'
+      }
+      const snapped = snapEventTimes({
+        events: all,
+        excludeId: eventId,
+        startMs,
+        endMs: endedAt === null ? null : endMs,
+        nowMs,
+        move,
+      })
+      startMs = snapped.startMs
+      if (snapped.endMs !== null) endMs = snapped.endMs
+      const startedAt =
+        snapped.startMs === new Date(patch.startedAt).getTime()
+          ? patch.startedAt
+          : nowIso(new Date(snapped.startMs))
+      const endedAtIso =
+        endedAt === null
+          ? null
+          : snapped.endMs === new Date(endedAt).getTime()
+            ? endedAt
+            : nowIso(new Date(snapped.endMs!))
+
       validateEventRange({
         events: mergeChunkEvents(chunksRef.current),
         startMs,
@@ -575,25 +670,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 folderColor: folder.color,
               }
             : {}),
-          startedAt: patch.startedAt,
-          endedAt: prev.endedAt === null ? null : endedAt,
+          startedAt,
+          endedAt: prev.endedAt === null ? null : endedAtIso,
           updatedAt: t,
         }
 
-        const newChunkId = quarterIdFromIso(patch.startedAt)
-        const updates: Record<string, Event[]> = {}
+        const neighborUpdates = snapped.patches.length
+          ? chunkUpdatesForPatches(chunksRef.current, snapped.patches, t)
+          : {}
+        const oldList =
+          neighborUpdates[oldChunkId] ??
+          chunksRef.current[oldChunkId]?.events ??
+          []
+        const newChunkId = quarterIdFromIso(startedAt)
+        const updates: Record<string, Event[]> = { ...neighborUpdates }
 
         if (newChunkId === oldChunkId) {
-          updates[oldChunkId] = prevList.map((e) =>
+          updates[oldChunkId] = oldList.map((e) =>
             e.id === eventId ? updated : e,
           )
         } else {
-          // 移動先が index にあるなら未ロードのまま上書きしない
           if (index.chunks.includes(newChunkId)) {
             await ensureChunks([newChunkId])
           }
-          updates[oldChunkId] = prevList.filter((e) => e.id !== eventId)
-          const dest = chunksRef.current[newChunkId]?.events ?? []
+          updates[oldChunkId] = oldList.filter((e) => e.id !== eventId)
+          const dest =
+            updates[newChunkId] ??
+            chunksRef.current[newChunkId]?.events ??
+            []
           updates[newChunkId] = [...dest, updated]
         }
 
@@ -612,13 +716,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const folder = tasksFile.folders.find((x) => x.id === task.folderId)
       if (!folder) throw new Error('フォルダが見つかりません')
 
-      const startMs = new Date(patch.startedAt).getTime()
-      const endMs = new Date(patch.endedAt).getTime()
+      const startMs0 = new Date(patch.startedAt).getTime()
+      const endMs0 = new Date(patch.endedAt).getTime()
       const qid = quarterIdFromIso(patch.startedAt)
-      await ensureEventsForRange(startMs, endMs)
+      await ensureEventsForRange(startMs0, endMs0)
       // index に無い四半期でも後で persist が作る。既存ならロード済みにする
       if (eventsIndexRef.current?.chunks.includes(qid)) {
         await ensureChunks([qid])
+      }
+      const snapped = snapEventTimes({
+        events: mergeChunkEvents(chunksRef.current),
+        excludeId: null,
+        startMs: startMs0,
+        endMs: endMs0,
+        nowMs: Date.now(),
+        move: 'both',
+      })
+      const startMs = snapped.startMs
+      const endMs = snapped.endMs!
+      const startedAt =
+        startMs === startMs0 ? patch.startedAt : nowIso(new Date(startMs))
+      const endedAt =
+        endMs === endMs0 ? patch.endedAt : nowIso(new Date(endMs))
+      const addQid = quarterIdFromIso(startedAt)
+      if (eventsIndexRef.current?.chunks.includes(addQid)) {
+        await ensureChunks([addQid])
       }
       validateEventRange({
         events: mergeChunkEvents(chunksRef.current),
@@ -641,13 +763,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           folderName: folder.name,
           taskColor: task.color,
           folderColor: folder.color,
-          startedAt: patch.startedAt,
-          endedAt: patch.endedAt,
+          startedAt,
+          endedAt,
           createdAt: t,
           updatedAt: t,
         }
-        const base = chunksRef.current[qid]?.events ?? []
-        const result = await persistChunkUpdates({ [qid]: [...base, ev] }, index)
+        const neighborUpdates = snapped.patches.length
+          ? chunkUpdatesForPatches(chunksRef.current, snapped.patches, t)
+          : {}
+        const base =
+          neighborUpdates[addQid] ?? chunksRef.current[addQid]?.events ?? []
+        const result = await persistChunkUpdates(
+          { ...neighborUpdates, [addQid]: [...base, ev] },
+          index,
+        )
         applyPersistResult(result)
       })
     },
@@ -686,7 +815,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const endMs = Date.now()
         const t = nowIso(new Date(endMs))
         const dirty = closeOpenAcrossChunks(chunksRef.current, endMs, t)
-        const qid = quarterIdFromIso(t)
+        const overlay: ChunkMap = { ...chunksRef.current }
+        for (const [id, events] of Object.entries(dirty)) {
+          overlay[id] = { events, updatedAt: overlay[id]?.updatedAt ?? t }
+        }
+        const lastEnded = eventsChrono(mergeChunkEvents(overlay))
+          .filter((e) => e.endedAt !== null)
+          .at(-1)
+        let startIso = t
+        if (lastEnded?.endedAt) {
+          const lastEnd = new Date(lastEnded.endedAt).getTime()
+          if (lastEnd !== endMs && Math.abs(endMs - lastEnd) <= SNAP_MS) {
+            const mid = Math.round((lastEnd + endMs) / 2)
+            startIso = nowIso(new Date(mid))
+            const lastChunk = findChunkIdForEvent(overlay, lastEnded.id)
+            if (lastChunk) {
+              const list = dirty[lastChunk] ?? [...(overlay[lastChunk]?.events ?? [])]
+              dirty[lastChunk] = list.map((e) =>
+                e.id === lastEnded.id
+                  ? { ...e, endedAt: startIso, updatedAt: t }
+                  : e,
+              )
+            }
+          }
+        }
+        const qid = quarterIdFromIso(startIso)
         const base = dirty[qid] ?? chunksRef.current[qid]?.events ?? []
         const started: Event = {
           id: newId(),
@@ -696,7 +849,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           folderName: folder.name,
           taskColor: task.color,
           folderColor: folder.color,
-          startedAt: t,
+          startedAt: startIso,
           endedAt: null,
           createdAt: t,
           updatedAt: t,
@@ -722,6 +875,82 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       applyPersistResult(result)
     })
   }, [applyPersistResult, runWrite])
+
+  const alignBoundary = useCallback(
+    async (olderId: string, newerId: string) => {
+      if (!eventsIndexRef.current) throw new Error('記録の目次がありません')
+      const all = mergeChunkEvents(chunksRef.current)
+      const older = all.find((e) => e.id === olderId)
+      const newer = all.find((e) => e.id === newerId)
+      if (!older || !newer) throw new Error('記録が見つかりません')
+      if (!older.endedAt) throw new Error('前の記録が終了していません')
+      const nowMs = Date.now()
+      const olderEnd = eventEndMs(older, nowMs)
+      const newerStart = eventStartMs(newer)
+      const mid = alignBoundaryMs(olderEnd, newerStart)
+      if (mid - eventStartMs(older) < MIN_RECORD_MS) {
+        throw new Error('前の記録が1秒未満になります')
+      }
+      if (newer.endedAt && eventEndMs(newer, nowMs) - mid < MIN_RECORD_MS) {
+        throw new Error('次の記録が1秒未満になります')
+      }
+      const iso = nowIso(new Date(mid))
+      if (olderEnd === newerStart) return older.endedAt
+      await runWrite(async () => {
+        const index = eventsIndexRef.current
+        if (!index) throw new Error('記録の目次がありません')
+        const t = nowIso()
+        const updates = chunkUpdatesForPatches(
+          chunksRef.current,
+          [
+            { id: olderId, endedAt: iso },
+            { id: newerId, startedAt: iso },
+          ],
+          t,
+        )
+        const result = await persistChunkUpdates(updates, index)
+        applyPersistResult(result)
+      })
+      return iso
+    },
+    [applyPersistResult, runWrite],
+  )
+
+  const setBoundary = useCallback(
+    async (olderId: string, newerId: string, iso: string) => {
+      if (!eventsIndexRef.current) throw new Error('記録の目次がありません')
+      const all = mergeChunkEvents(chunksRef.current)
+      const older = all.find((e) => e.id === olderId)
+      const newer = all.find((e) => e.id === newerId)
+      if (!older || !newer) throw new Error('記録が見つかりません')
+      if (!older.endedAt) throw new Error('前の記録が終了していません')
+      const nowMs = Date.now()
+      const mid = new Date(iso).getTime()
+      if (!Number.isFinite(mid)) throw new Error('時刻が不正です')
+      if (mid - eventStartMs(older) < MIN_RECORD_MS) {
+        throw new Error('前の記録が1秒未満になります')
+      }
+      if (newer.endedAt && eventEndMs(newer, nowMs) - mid < MIN_RECORD_MS) {
+        throw new Error('次の記録が1秒未満になります')
+      }
+      await runWrite(async () => {
+        const index = eventsIndexRef.current
+        if (!index) throw new Error('記録の目次がありません')
+        const t = nowIso()
+        const updates = chunkUpdatesForPatches(
+          chunksRef.current,
+          [
+            { id: olderId, endedAt: iso },
+            { id: newerId, startedAt: iso },
+          ],
+          t,
+        )
+        const result = await persistChunkUpdates(updates, index)
+        applyPersistResult(result)
+      })
+    },
+    [applyPersistResult, runWrite],
+  )
 
   const saveLogPrefs = useCallback(
     async (prefs: LogPrefs) => {
@@ -793,6 +1022,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       deleteTask,
       startTask,
       stopCurrent,
+      alignBoundary,
+      setBoundary,
       loadOlderEvents,
       ensureEventsForRange,
     }),
@@ -812,6 +1043,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       deleteTask,
       startTask,
       stopCurrent,
+      alignBoundary,
+      setBoundary,
       loadOlderEvents,
       ensureEventsForRange,
     ],

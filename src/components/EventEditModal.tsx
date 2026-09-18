@@ -18,6 +18,12 @@ import {
   useStoreBusy,
   useStoreData,
 } from '../state/Store'
+import {
+  boundDayRange,
+  boundsForEnd,
+  boundsForStart,
+  clampTimeOnDate,
+} from '../state/eventSnap'
 import type { Event, Task } from '../types'
 
 /** Activity の追加モード用。openAdd が計算して渡す */
@@ -109,7 +115,7 @@ type EventEditFormProps =
 
 function EventEditForm(props: EventEditFormProps) {
   const busy = useStoreBusy()
-  const { folders, tasks } = useStoreData()
+  const { folders, tasks, events } = useStoreData()
   const { updateEvent, addEvent, deleteEvent } = useStoreActions()
   const isAdd = props.mode === 'add'
   const editing = props.mode === 'edit' ? props.editing : null
@@ -167,6 +173,40 @@ function EventEditForm(props: EventEditFormProps) {
   )
 
   const isRecording = !isAdd && editing!.endedAt === null
+  const endRequired = !isRecording
+
+  const startMsSafe = (() => {
+    try {
+      if (!formStartDate || !formStartTime.trim()) return Date.now()
+      return new Date(dateTimeInputToIso(formStartDate, formStartTime)).getTime()
+    } catch {
+      return Date.now()
+    }
+  })()
+  const endMsSafe = (() => {
+    if (!endRequired || !formEndDate || !formEndTime.trim()) return null
+    try {
+      return new Date(dateTimeInputToIso(formEndDate, formEndTime)).getTime()
+    } catch {
+      return startMsSafe + 1000
+    }
+  })()
+  const startBound = boundsForStart({
+    events,
+    excludeId: eventId,
+    startMs: startMsSafe,
+    endMs: endMsSafe,
+    nowMs: Date.now(),
+  })
+  const endBound = boundsForEnd({
+    events,
+    excludeId: eventId,
+    startMs: startMsSafe,
+    endMs: endMsSafe ?? startMsSafe + 1000,
+    nowMs: Date.now(),
+  })
+  const startDays = boundDayRange(startBound)
+  const endDays = boundDayRange(endBound)
   const taskMissing =
     !isAdd &&
     formTaskId !== '' &&
@@ -226,7 +266,6 @@ function EventEditForm(props: EventEditFormProps) {
   }
 
   const title = isAdd ? '記録を追加' : '記録を編集'
-  const endRequired = !isRecording
 
   return (
     <>
@@ -261,21 +300,31 @@ function EventEditForm(props: EventEditFormProps) {
         />
       </div>
 
-      <div className={form.field}>
+      <div className={form.dateTimeField}>
         <span>開始</span>
         <div className={form.dateTimeRow}>
           <DateField
             value={formStartDate}
             disabled={busy}
-            onChange={setFormStartDate}
+            hideChevron
+            minDay={startDays.minDay}
+            maxDay={startDays.maxDay}
+            onChange={(d) => {
+              setFormStartDate(d)
+              const next = clampTimeOnDate(d, formStartTime, startBound)
+              if (next) setFormStartTime(next)
+            }}
             aria-label="開始日"
           />
           <TimeField
             value={formStartTime}
             disabled={busy}
+            hideChevron
+            date={formStartDate}
+            bound={startBound}
             onChange={setFormStartTime}
-            onDayChange={(d) =>
-              setFormStartDate((cur) => (cur ? addDaysKey(cur, d) : cur))
+            onDayChange={(delta) =>
+              setFormStartDate((cur) => (cur ? addDaysKey(cur, delta) : cur))
             }
             aria-label="開始時刻"
           />
@@ -283,21 +332,31 @@ function EventEditForm(props: EventEditFormProps) {
       </div>
 
       {endRequired && (
-        <div className={form.field}>
+        <div className={form.dateTimeField}>
           <span>終了</span>
           <div className={form.dateTimeRow}>
             <DateField
               value={formEndDate}
               disabled={busy}
-              onChange={setFormEndDate}
+              hideChevron
+              minDay={endDays.minDay}
+              maxDay={endDays.maxDay}
+              onChange={(d) => {
+                setFormEndDate(d)
+                const next = clampTimeOnDate(d, formEndTime, endBound)
+                if (next) setFormEndTime(next)
+              }}
               aria-label="終了日"
             />
             <TimeField
               value={formEndTime}
               disabled={busy}
+              hideChevron
+              date={formEndDate}
+              bound={endBound}
               onChange={setFormEndTime}
-              onDayChange={(d) =>
-                setFormEndDate((cur) => (cur ? addDaysKey(cur, d) : cur))
+              onDayChange={(delta) =>
+                setFormEndDate((cur) => (cur ? addDaysKey(cur, delta) : cur))
               }
               aria-label="終了時刻"
             />

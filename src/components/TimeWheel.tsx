@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { DAY_SEC, pad2 } from '../lib/time'
+import { DAY_SEC, addDaysKey, pad2 } from '../lib/time'
+import {
+  clampTimeOnDate,
+  validHours,
+  validMinutes,
+  validSeconds,
+} from '../state/eventSnap'
 import styles from './TimeWheel.module.css'
 
 const ITEM = 32
@@ -251,12 +257,240 @@ function WheelColumn({
   )
 }
 
+/**
+ * 有効値だけを並べる桁。枠幅は loop 列と同じ 52px のまま。
+ * 端で止める。時の端は日付繰り上げ/下げを親が処理する。
+ */
+function FiniteColumn({
+  label,
+  values,
+  value,
+  disabled,
+  onPick,
+  onEdge,
+}: {
+  label: string
+  values: number[]
+  value: number
+  disabled?: boolean
+  onPick: (v: number) => void
+  onEdge?: (dir: -1 | 1) => void
+}) {
+  const idxOf = (v: number) => {
+    const i = values.indexOf(v)
+    return i >= 0 ? i : 0
+  }
+  const [pos, setPos] = useState(() => idxOf(value))
+  const posRef = useRef(pos)
+  posRef.current = pos
+  const committedRef = useRef(Math.round(pos))
+  const draggingRef = useRef(false)
+  const movedRef = useRef(false)
+  const rafRef = useRef<number | null>(null)
+  const samplesRef = useRef<{ t: number; p: number }[]>([])
+  const wheelAccRef = useRef(0)
+  const wheelTargetRef = useRef<number | null>(null)
+  const valuesRef = useRef(values)
+  valuesRef.current = values
+  const onPickRef = useRef(onPick)
+  onPickRef.current = onPick
+  const onEdgeRef = useRef(onEdge)
+  onEdgeRef.current = onEdge
+
+  const stopAnim = () => {
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
+    }
+  }
+
+  useEffect(() => stopAnim, [])
+
+  const applyPos = (p: number) => {
+    const n = valuesRef.current.length
+    const clamped = Math.max(0, Math.min(Math.max(0, n - 1), p))
+    setPos(clamped)
+    posRef.current = clamped
+    const r = Math.round(clamped)
+    if (r !== committedRef.current) {
+      committedRef.current = r
+      const v = valuesRef.current[r]
+      if (v !== undefined) onPickRef.current(v)
+    }
+  }
+
+  const setVisualPos = (p: number) => {
+    const n = valuesRef.current.length
+    const clamped = Math.max(-0.35, Math.min(n - 0.65, p))
+    setPos(clamped)
+    posRef.current = clamped
+  }
+
+  const animateTo = (target: number, ms: number, commit: boolean) => {
+    stopAnim()
+    const from = posRef.current
+    if (Math.abs(target - from) < 0.001) {
+      if (commit) applyPos(target)
+      else setVisualPos(target)
+      return
+    }
+    const t0 = performance.now()
+    const step = (t: number) => {
+      const k = Math.min(1, (t - t0) / ms)
+      const p = from + (target - from) * easeOutCubic(k)
+      if (commit) applyPos(p)
+      else setVisualPos(p)
+      if (k < 1) rafRef.current = requestAnimationFrame(step)
+      else rafRef.current = null
+    }
+    rafRef.current = requestAnimationFrame(step)
+  }
+
+  useEffect(() => {
+    if (draggingRef.current) return
+    const i = idxOf(value)
+    if (i === committedRef.current && Math.abs(posRef.current - i) < 0.2) return
+    stopAnim()
+    committedRef.current = i
+    animateTo(i, 140, false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, values.join(',')])
+
+  const finishTo = (dest: number) => {
+    const n = valuesRef.current.length
+    let edge: -1 | 1 | 0 = 0
+    if (dest < 0) edge = -1
+    if (dest > n - 1) edge = 1
+    const clamped = Math.max(0, Math.min(n - 1, dest))
+    const dist = Math.abs(clamped - posRef.current)
+    const ms =
+      dist < 0.5 ? 140 : Math.max(180, Math.min(900, 140 + dist * 75))
+    animateTo(clamped, ms, true)
+    if (edge !== 0) onEdgeRef.current?.(edge)
+  }
+
+  const onWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (disabled || draggingRef.current) return
+    const scale = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 100 : 1
+    wheelAccRef.current += e.deltaY * scale
+    const steps = Math.trunc(wheelAccRef.current / 100)
+    if (steps === 0) return
+    wheelAccRef.current -= steps * 100
+    const base =
+      rafRef.current !== null && wheelTargetRef.current !== null
+        ? wheelTargetRef.current
+        : Math.round(posRef.current)
+    const target = base + steps
+    wheelTargetRef.current = target
+    finishTo(target)
+  }
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (disabled) return
+    stopAnim()
+    wheelTargetRef.current = null
+    wheelAccRef.current = 0
+    draggingRef.current = true
+    movedRef.current = false
+    samplesRef.current = [{ t: performance.now(), p: posRef.current }]
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      /* window リスナーで追従 */
+    }
+    const startY = e.clientY
+    const startPos = posRef.current
+    const move = (ev: PointerEvent) => {
+      if (Math.abs(ev.clientY - startY) > 4) movedRef.current = true
+      setVisualPos(startPos + (startY - ev.clientY) / ITEM)
+      const now = performance.now()
+      const arr = samplesRef.current
+      arr.push({ t: now, p: posRef.current })
+      while (arr.length > 2 && now - arr[0]!.t > 80) arr.shift()
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+      draggingRef.current = false
+      const arr = samplesRef.current
+      const last = arr[arr.length - 1]
+      const first = arr[0]
+      let vel = 0
+      if (
+        last &&
+        first &&
+        last.t > first.t &&
+        performance.now() - last.t < 80
+      ) {
+        vel = (last.p - first.p) / (last.t - first.t)
+      }
+      let dest: number
+      if (Math.abs(vel) < VEL_INERTIA_MIN) {
+        dest = Math.round(posRef.current)
+      } else {
+        const excess = Math.abs(vel) - VEL_INERTIA_MIN
+        const glide =
+          Math.min(excess * GLIDE_MS, MAX_GLIDE_ITEMS) * Math.sign(vel)
+        dest = Math.round(posRef.current + glide)
+      }
+      finishTo(dest)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+  }
+
+  const items: { key: number; y: number; num: number }[] = []
+  const base = Math.floor(pos)
+  for (let i = base - 3; i <= base + 4; i++) {
+    const num = values[i]
+    if (num === undefined) continue
+    items.push({
+      key: i,
+      y: CENTER + (i - pos) * ITEM,
+      num,
+    })
+  }
+  const active = Math.round(pos)
+
+  return (
+    <div
+      className={styles.column}
+      role="listbox"
+      aria-label={label}
+      onPointerDown={onPointerDown}
+      onWheel={onWheel}
+    >
+      {items.map((it) => (
+        <button
+          type="button"
+          key={it.key}
+          role="option"
+          aria-selected={it.key === active}
+          className={it.key === active ? styles.itemActive : styles.item}
+          style={{ transform: `translateY(${it.y}px)` }}
+          disabled={disabled}
+          onClick={() => {
+            if (draggingRef.current || movedRef.current) return
+            finishTo(it.key)
+          }}
+        >
+          {pad2(it.num)}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 /** iOS 風ドラムロールの時刻ピッカー（24時間・時分秒・全桁無限軌道） */
 export function TimeWheel({
   value,
   onChange,
   onDayChange,
   disabled,
+  date,
+  bound,
 }: {
   /** "HH:mm:ss" */
   value: string
@@ -264,6 +498,9 @@ export function TimeWheel({
   /** 23→0（+1日）/ 0→23（-1日）と日を跨いだときに呼ばれる */
   onDayChange?: (deltaDays: number) => void
   disabled?: boolean
+  /** bound があるとき、その日の合法時分秒だけを出す */
+  date?: string
+  bound?: { minMs: number; maxMs: number }
 }) {
   const [h, m, s] = parseTime(value)
   const total = h * 3600 + m * 60 + s
@@ -281,6 +518,71 @@ export function TimeWheel({
       )
     }
     if (dayDelta !== 0) onDayChange?.(dayDelta)
+  }
+
+  if (bound && date) {
+    const hours = validHours(date, bound)
+    const mins = validMinutes(date, h, bound)
+    const secs = validSeconds(date, h, m, bound)
+    const emit = (nh: number, nm: number, ns: number) => {
+      onChange(`${pad2(nh)}:${pad2(nm)}:${pad2(ns)}`)
+    }
+    const pickH = (nh: number) => {
+      const nmins = validMinutes(date, nh, bound)
+      const nm = nmins.includes(m) ? m : (nmins[0] ?? 0)
+      const nsecs = validSeconds(date, nh, nm, bound)
+      const ns = nsecs.includes(s) ? s : (nsecs[0] ?? 0)
+      emit(nh, nm, ns)
+    }
+    const pickM = (nm: number) => {
+      const nsecs = validSeconds(date, h, nm, bound)
+      const ns = nsecs.includes(s) ? s : (nsecs[0] ?? 0)
+      emit(h, nm, ns)
+    }
+    const jumpDay = (dir: -1 | 1) => {
+      const nextDate = addDaysKey(date, dir)
+      const t = clampTimeOnDate(
+        nextDate,
+        dir > 0 ? '00:00:00' : '23:59:59',
+        bound,
+      )
+      if (!t) return
+      onDayChange?.(dir)
+      onChange(t)
+    }
+    return (
+      <div className={styles.root}>
+        <div className={styles.highlight} aria-hidden />
+        <FiniteColumn
+          label="時"
+          values={hours}
+          value={hours.includes(h) ? h : (hours[0] ?? 0)}
+          disabled={disabled}
+          onPick={pickH}
+          onEdge={jumpDay}
+        />
+        <span className={styles.sep} aria-hidden>
+          :
+        </span>
+        <FiniteColumn
+          label="分"
+          values={mins}
+          value={mins.includes(m) ? m : (mins[0] ?? 0)}
+          disabled={disabled}
+          onPick={pickM}
+        />
+        <span className={styles.sep} aria-hidden>
+          :
+        </span>
+        <FiniteColumn
+          label="秒"
+          values={secs}
+          value={secs.includes(s) ? s : (secs[0] ?? 0)}
+          disabled={disabled}
+          onPick={(ns) => emit(h, m, ns)}
+        />
+      </div>
+    )
   }
 
   return (

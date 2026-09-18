@@ -40,6 +40,8 @@ export type MonthCalendarProps = {
   /** Log 用。false なら月送りだけ（DateField） */
   showYearNav?: boolean
   maxYear?: number
+  minDay?: string
+  maxDay?: string
 }
 
 /**
@@ -58,6 +60,8 @@ export function MonthCalendar({
   onPickDay,
   showYearNav = false,
   maxYear = 9999,
+  minDay,
+  maxDay,
 }: MonthCalendarProps) {
   const cells = buildMonthCells(viewYm.y, viewYm.m)
 
@@ -181,6 +185,9 @@ export function MonthCalendar({
             inBand = day >= hs && day <= he
             selected = day === hs || day === he
           }
+          const blocked =
+            (minDay !== undefined && day < minDay) ||
+            (maxDay !== undefined && day > maxDay)
           return (
             <button
               key={day}
@@ -193,6 +200,7 @@ export function MonthCalendar({
               ]
                 .filter(Boolean)
                 .join(' ')}
+              disabled={blocked}
               onClick={() => onPickDay(day)}
             >
               {Number(day.slice(8, 10))}

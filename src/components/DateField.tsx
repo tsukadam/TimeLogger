@@ -14,12 +14,18 @@ export function DateField({
   value,
   onChange,
   disabled,
+  hideChevron,
+  minDay,
+  maxDay,
   'aria-label': ariaLabel,
 }: {
   /** "YYYY-MM-DD" */
   value: string
   onChange: (v: string) => void
   disabled?: boolean
+  hideChevron?: boolean
+  minDay?: string
+  maxDay?: string
   'aria-label'?: string
 }) {
   const [open, setOpen] = useState(false)
@@ -51,9 +57,11 @@ export function DateField({
           {/* 年はカレンダー側の見出しにだけ出す（欄では月日だけで足りる） */}
           {value ? `${value.slice(5, 7)}/${value.slice(8, 10)}` : '--/--'}
         </span>
-        <span className={styles.chevron} aria-hidden>
-          ▾
-        </span>
+        {!hideChevron && (
+          <span className={styles.chevron} aria-hidden>
+            ▾
+          </span>
+        )}
       </button>
 
       {open &&
@@ -73,6 +81,8 @@ export function DateField({
                 onViewYm={setView}
                 mode="single"
                 selectedDay={value}
+                minDay={minDay}
+                maxDay={maxDay}
                 onPickDay={(day) => {
                   onChange(day)
                   setOpen(false)

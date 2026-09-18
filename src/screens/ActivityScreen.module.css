@@ -126,3 +126,42 @@
 .sentinel {
   height: 1px;
 }
+
+.item {
+  position: relative;
+}
+
+.itemAcross {
+  /* 日付は下にあるので、ボタンの下側だけ空ける */
+  margin-bottom: 10px;
+}
+
+.joinBtn {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: -14px;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line));
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 22%, var(--panel-2));
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 650;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.joinIcon {
+  display: block;
+  width: 11px;
+  height: 11px;
+  fill: currentColor;
+}
