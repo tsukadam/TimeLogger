@@ -195,7 +195,12 @@ export default function App() {
     if (route !== 'main') return
     const el = mainScrollRef.current
     if (!el) return
-    el.scrollTop = mainTab === 'tasks' ? tasksScrollTopRef.current : 0
+    if (mainTab !== 'tasks') {
+      el.scrollTop = 0
+      return
+    }
+    if (el.querySelector('[data-task-running="true"]')) return
+    el.scrollTop = tasksScrollTopRef.current
   }, [mainTab, route])
 
   const scrollClass = scrolling

@@ -211,6 +211,22 @@ export function TasksScreen() {
     folderTopsRef.current = next
   }, [folders])
 
+  // Tasks を開いたとき、記録中の行へスクロール（開始操作のたびに追従はしない）
+  const didFocusRunningRef = useRef(false)
+  useLayoutEffect(() => {
+    if (loading || didFocusRunningRef.current) return
+    if (!current) {
+      didFocusRunningRef.current = true
+      return
+    }
+    const el = rootRef.current?.querySelector(
+      `[data-task-id="${current.taskId}"]`,
+    )
+    if (!(el instanceof HTMLElement)) return
+    didFocusRunningRef.current = true
+    el.scrollIntoView({ block: 'center', behavior: 'auto' })
+  }, [loading, current, folders, tasks])
+
   // タスク並び替え中の FLIP（ドラッグ中の行自体は動かさない）
   const taskTopsRef = useRef<Map<string, number>>(new Map())
   useLayoutEffect(() => {
@@ -664,6 +680,7 @@ export function TasksScreen() {
                     .filter(Boolean)
                     .join(' ')}
                   data-task-id={task.id}
+                  data-task-running={running ? 'true' : undefined}
                 >
                   <button
                     type="button"
@@ -729,7 +746,7 @@ export function TasksScreen() {
                     onClick={(e) => onTaskCardClick(task, e)}
                   >
                     <span
-                      className={chrome.swatch}
+                      className={styles.taskColorBar}
                       style={{ background: task.color }}
                       aria-hidden
                     />

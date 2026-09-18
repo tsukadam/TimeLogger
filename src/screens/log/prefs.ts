@@ -10,7 +10,7 @@ import {
   weekdayShort,
   ymParts,
 } from '../../lib/time'
-import type { Event, LogPrefs } from '../../types'
+import type { Event, LogKind, LogPrefs } from '../../types'
 import type { AppliedRange } from './types'
 
 /** Custom Day/Week グラフの棒数上限（これ超でボタン無効） */
@@ -51,6 +51,7 @@ export function makeDefaultPrefs(now = new Date()): LogPrefs {
     customEnd: t,
     customApplied: null,
     customGrain: 'day',
+    rangeAlignedOn: {},
   }
 }
 
@@ -78,6 +79,45 @@ export function normalizePrefs(p: LogPrefs | null): LogPrefs | null {
       grain === 'day' || grain === 'week' || grain === 'month'
         ? grain
         : def.customGrain,
+    rangeAlignedOn: old.rangeAlignedOn ?? def.rangeAlignedOn,
+  }
+}
+
+const ALIGN_KINDS = ['day', 'week', 'month', 'year'] as const
+type AlignKind = (typeof ALIGN_KINDS)[number]
+
+function isAlignKind(kind: LogKind): kind is AlignKind {
+  return (ALIGN_KINDS as readonly string[]).includes(kind)
+}
+
+/** その種別を today 基準の期間に合わせる（aligned フラグは触らない） */
+export function snapPeriodToToday(
+  prefs: LogPrefs,
+  kind: AlignKind,
+  today: string,
+): LogPrefs {
+  const { y, m } = ymParts(today)
+  if (kind === 'day') return { ...prefs, day: today }
+  if (kind === 'week') return { ...prefs, weekStart: mondayKeyOf(today) }
+  if (kind === 'month') return { ...prefs, monthStart: monthKey(y, m) }
+  return { ...prefs, yearStart: monthKey(y, 1) }
+}
+
+/**
+ * Day/Week/Month/Year をその暦日に初めて開いたときだけ、期間を「今」に合わせる。
+ * 二度目以降（手で日付を変えたあとも）はそのまま。
+ */
+export function alignOpenPeriod(
+  prefs: LogPrefs,
+  kind: LogKind,
+  today: string,
+): LogPrefs {
+  if (!isAlignKind(kind)) return prefs
+  if (prefs.rangeAlignedOn?.[kind] === today) return prefs
+  const snapped = snapPeriodToToday(prefs, kind, today)
+  return {
+    ...snapped,
+    rangeAlignedOn: { ...prefs.rangeAlignedOn, [kind]: today },
   }
 }
 

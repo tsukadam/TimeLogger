@@ -60,6 +60,11 @@ export type LogPrefs = {
   customApplied: { start: string; end: string } | null
   /** Custom サマリーの粒度 */
   customGrain: 'day' | 'week' | 'month'
+  /**
+   * Day/Week/Month/Year を「その暦日に初めて開いた」日。
+   * 値が today と一致する種別は、手で変えた期間を維持する。
+   */
+  rangeAlignedOn?: Partial<Record<'day' | 'week' | 'month' | 'year', string>>
 }
 
 export type SettingsFile = {

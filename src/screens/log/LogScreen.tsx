@@ -20,6 +20,7 @@ import styles from '../LogScreen.module.css'
 import { aggregateLogData, resolveDisplay } from './aggregate'
 import { IndividualChart } from './IndividualChart'
 import {
+  alignOpenPeriod,
   buildApplied,
   clampCustomGrain,
   customBarLimits,
@@ -69,10 +70,14 @@ export function LogScreen() {
   // settings から復元（旧形式の設定も正規化して受け入れる）
   useEffect(() => {
     if (loading) return
-    const next = normalizePrefs(logPrefs) ?? makeDefaultPrefs()
+    const restored = normalizePrefs(logPrefs) ?? makeDefaultPrefs()
+    const next = alignOpenPeriod(restored, restored.kind, todayKey())
     setPrefs(next)
     setPrefsReady(true)
-  }, [loading, logPrefs])
+    if (next !== restored) {
+      void saveLogPrefs(next)
+    }
+  }, [loading, logPrefs, saveLogPrefs])
 
   const hasLive = useMemo(() => events.some((e) => e.endedAt === null), [events])
   const now = useNowTick(hasLive)
@@ -138,7 +143,7 @@ export function LogScreen() {
   }
 
   const setKind = (kind: LogKind) => {
-    const next = { ...prefs, kind }
+    const next = alignOpenPeriod({ ...prefs, kind }, kind, today)
     void persist(next)
     setDetailOpen(false)
   }
