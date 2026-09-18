@@ -7,12 +7,14 @@ export default defineConfig(({ command }) => ({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      manifestFilename: 'manifest-v7.webmanifest',
+      manifestFilename: 'manifest-v8.webmanifest',
       includeAssets: [
         'favicon-v3.svg',
-        'apple-touch-icon-v7.png',
-        'pwa-icon-v7-192.png',
-        'pwa-icon-v7-512.png',
+        'apple-touch-icon-v8.png',
+        'pwa-icon-v8-192.png',
+        'pwa-icon-v8-512.png',
+        'pwa-icon-v8-maskable-192.png',
+        'pwa-icon-v8-maskable-512.png',
       ],
       manifest: {
         name: 'TimeLogger',
@@ -28,16 +30,28 @@ export default defineConfig(({ command }) => ({
         scope: './',
         icons: [
           {
-            src: 'pwa-icon-v7-512.png',
+            src: 'pwa-icon-v8-maskable-512.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable',
+            purpose: 'maskable',
           },
           {
-            src: 'pwa-icon-v7-192.png',
+            src: 'pwa-icon-v8-maskable-192.png',
             sizes: '192x192',
             type: 'image/png',
-            purpose: 'any maskable',
+            purpose: 'maskable',
+          },
+          {
+            src: 'pwa-icon-v8-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: 'pwa-icon-v8-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any',
           },
         ],
       },
@@ -57,6 +71,9 @@ export default defineConfig(({ command }) => ({
   // 本番は相対 base。親パスを変えても（秘匿サブディレクトリ等）再ビルド不要
   base: command === 'serve' ? '/' : process.env.VITE_BASE_PATH || './',
   server: {
+    watch: {
+      ignored: ['**/build/**'],
+    },
     proxy: {
       '/api': 'http://127.0.0.1:8080',
       '/data': 'http://127.0.0.1:8080',
