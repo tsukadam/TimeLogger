@@ -1,0 +1,27 @@
+{
+  "name": "TimeLogger",
+  "short_name": "TimeLogger",
+  "description": "個人用ライフログ・タイムトラッカー",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#2e3444",
+  "theme_color": "#0e1014",
+  "lang": "ja",
+  "scope": "./",
+  "id": "./",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "pwa-icon-v6-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "pwa-icon-v6-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
