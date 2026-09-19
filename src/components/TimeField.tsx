@@ -27,6 +27,7 @@ function TimeWheelDialog({
   onDayChange,
   date,
   bound,
+  onCancel,
 }: {
   pos: PanelPos
   panelRef: RefObject<HTMLDivElement | null>
@@ -35,22 +36,30 @@ function TimeWheelDialog({
   onDayChange?: (deltaDays: number) => void
   date?: string
   bound?: TimeBound
+  onCancel?: () => void
 }) {
   return (
     <div
       ref={panelRef}
-      className={styles.panel}
+      className={styles.stack}
       style={{ top: pos.top, left: pos.left, width: pos.width }}
       role="dialog"
       aria-label="時刻"
     >
-      <TimeWheel
-        value={value}
-        onChange={onChange}
-        onDayChange={onDayChange}
-        date={date}
-        bound={bound}
-      />
+      <div className={styles.panel}>
+        <TimeWheel
+          value={value}
+          onChange={onChange}
+          onDayChange={onDayChange}
+          date={date}
+          bound={bound}
+        />
+      </div>
+      {onCancel && (
+        <button type="button" className={styles.cancel} onClick={onCancel}>
+          キャンセル
+        </button>
+      )}
     </div>
   )
 }
@@ -132,10 +141,12 @@ export function TimeField({
             return
           }
           if (!rootRef.current) return
+          setDraft(value)
+          draftRef.current = value
           const anchor = rectToAnchor(rootRef.current.getBoundingClientRect())
           anchorRef.current = anchor
           setPos(posFromAnchor(anchor))
-          setOpen(true)
+          window.setTimeout(() => setOpen(true), 0)
         }}
       >
         <span className={styles.value}>{value || '--:--:--'}</span>
@@ -185,6 +196,7 @@ export function TimeWheelPopover({
   onChange,
   onDayChange,
   onClose,
+  onCancel,
 }: {
   value: string
   date: string
@@ -193,11 +205,14 @@ export function TimeWheelPopover({
   onChange: (v: string) => void
   onDayChange?: (deltaDays: number) => void
   onClose: (value: string) => void
+  onCancel: () => void
 }) {
   const draftRef = useRef(value)
   draftRef.current = value
   const panelRef = useRef<HTMLDivElement | null>(null)
-  const [pos, setPos] = useState<PanelPos>(() => posFromAnchor(anchor))
+  const [pos, setPos] = useState<PanelPos>(() =>
+    posFromAnchor(anchor, { width: PANEL_W, height: PANEL_H + 44 }),
+  )
   useScrollLock(true)
   const commitClose = () => {
     const v = draftRef.current
@@ -239,6 +254,7 @@ export function TimeWheelPopover({
         onDayChange={onDayChange}
         date={date}
         bound={bound}
+        onCancel={onCancel}
       />
     </>,
     document.body,

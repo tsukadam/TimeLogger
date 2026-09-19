@@ -144,7 +144,33 @@ export function snapEventTimes(opts: {
 
 export type TimeBound = { minMs: number; maxMs: number }
 
-/** 開始時刻ホイールの合法範囲（隣接は SNAP 以内の重なりまで許容） */
+/** ホイールが一度に扱う幅。現在値から前24時間・後24時間 */
+export const WHEEL_PAD_MS = 24 * 60 * 60 * 1000
+
+/** 合法範囲 ∩ 現在値±24h。現在値が範囲外なら範囲側へ寄せる（広げない） */
+export function clipBoundWindow(
+  bound: TimeBound | undefined,
+  centerMs: number,
+): TimeBound {
+  let c = Number.isFinite(centerMs) ? centerMs : Date.now()
+  if (bound) {
+    if (Number.isFinite(bound.minMs) && c < bound.minMs) c = bound.minMs
+    if (Number.isFinite(bound.maxMs) && c > bound.maxMs) c = bound.maxMs
+  }
+  let minMs = c - WHEEL_PAD_MS
+  let maxMs = c + WHEEL_PAD_MS
+  if (bound) {
+    if (Number.isFinite(bound.minMs)) minMs = Math.max(minMs, bound.minMs)
+    if (Number.isFinite(bound.maxMs)) maxMs = Math.min(maxMs, bound.maxMs)
+  }
+  if (minMs > maxMs) {
+    minMs = c
+    maxMs = c
+  }
+  return { minMs, maxMs }
+}
+
+/** 開始時刻ホイールの合法範囲。前の記録の終了（端点一致は可）より前へは出ない */
 export function boundsForStart(opts: {
   events: Event[]
   excludeId: string | null
@@ -154,15 +180,13 @@ export function boundsForStart(opts: {
 }): TimeBound {
   const { events, excludeId, endMs, nowMs } = opts
   const { prev } = findPrevNext(events, opts.startMs, excludeId)
-  const minMs = prev
-    ? eventEndMs(prev, nowMs) - SNAP_MS
-    : Number.NEGATIVE_INFINITY
+  const minMs = prev ? eventEndMs(prev, nowMs) : Number.NEGATIVE_INFINITY
   let maxMs = nowMs + FUTURE_GRACE_MS
   if (endMs !== null) maxMs = Math.min(maxMs, endMs - MIN_RECORD_MS)
   return { minMs, maxMs }
 }
 
-/** 終了時刻ホイールの合法範囲 */
+/** 終了時刻ホイールの合法範囲。次の記録の開始より後へは出ない */
 export function boundsForEnd(opts: {
   events: Event[]
   excludeId: string | null
@@ -174,7 +198,7 @@ export function boundsForEnd(opts: {
   const { next } = findPrevNext(events, startMs, excludeId)
   const minMs = startMs + MIN_RECORD_MS
   let maxMs = nowMs + FUTURE_GRACE_MS
-  if (next) maxMs = Math.min(maxMs, eventStartMs(next) + SNAP_MS)
+  if (next) maxMs = Math.min(maxMs, eventStartMs(next))
   return { minMs, maxMs }
 }
 

@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { EventEditModal } from '../components/EventEditModal'
+import {
+  EventEditModal,
+  type EventFormSeed,
+} from '../components/EventEditModal'
 import { TimeWheelPopover } from '../components/TimeField'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { FolderIcon } from '../components/FolderIcon'
@@ -12,6 +15,7 @@ import {
   formatDateDivider,
   formatEventRange,
   isoToTimeInput,
+  nowIso,
 } from '../lib/time'
 import { rectToAnchor, type PanelAnchor } from '../lib/placePanel'
 import { useNowTick } from '../lib/useNowTick'
@@ -22,6 +26,8 @@ import { resolveDisplay } from './log/aggregate'
 import styles from './ActivityScreen.module.css'
 
 const PAGE = 50
+const HOLE_WINDOW_MS = 12 * 60 * 60 * 1000
+const HOLE_MIN_MS = 60 * 1000
 
 type DayGroup = {
   key: string
@@ -29,7 +35,10 @@ type DayGroup = {
   events: Event[]
 }
 
-type SheetState = { type: 'closed' } | { type: 'edit'; id: string }
+type SheetState =
+  | { type: 'closed' }
+  | { type: 'edit'; id: string }
+  | { type: 'add'; initial: EventFormSeed }
 
 function findScrollParent(el: HTMLElement | null): Element | null {
   let cur: HTMLElement | null = el
@@ -39,6 +48,57 @@ function findScrollParent(el: HTMLElement | null): Element | null {
     cur = cur.parentElement
   }
   return null
+}
+
+/**
+ * 直近12時間の記録の「穴」（時系列上の空白）のうち最古を返す。
+ * 無ければ null（＝押した時点の時刻をデフォルトにする）。
+ */
+function findOldestHole(
+  events: Event[],
+  nowMs: number,
+): { start: number; end: number } | null {
+  const windowStart = nowMs - HOLE_WINDOW_MS
+  const intervals = events
+    .map((e) => ({
+      s: new Date(e.startedAt).getTime(),
+      e: e.endedAt ? new Date(e.endedAt).getTime() : nowMs,
+    }))
+    .filter(
+      (x) =>
+        Number.isFinite(x.s) &&
+        Number.isFinite(x.e) &&
+        x.e > windowStart &&
+        x.s < nowMs,
+    )
+    .sort((a, b) => a.s - b.s)
+  if (intervals.length === 0) return null
+
+  const merged: { s: number; e: number }[] = []
+  for (const x of intervals) {
+    const last = merged[merged.length - 1]
+    if (last && x.s <= last.e) last.e = Math.max(last.e, x.e)
+    else merged.push({ ...x })
+  }
+
+  const holes: { s: number; e: number }[] = []
+  holes.push({ s: windowStart, e: merged[0]!.s })
+  for (let i = 0; i < merged.length - 1; i++) {
+    holes.push({ s: merged[i]!.e, e: merged[i + 1]!.s })
+  }
+  holes.push({ s: merged[merged.length - 1]!.e, e: nowMs })
+
+  for (const h of holes) {
+    const s = Math.max(h.s, windowStart)
+    const e = Math.min(h.e, nowMs)
+    if (e - s >= HOLE_MIN_MS) return { start: s, end: e }
+  }
+  return null
+}
+
+function msToInputs(ms: number): { date: string; time: string } {
+  const iso = nowIso(new Date(ms))
+  return { date: dateKey(iso), time: isoToTimeInput(iso) }
 }
 
 export function ActivityScreen() {
@@ -127,6 +187,27 @@ export function ActivityScreen() {
     setSheet({ type: 'edit', id: ev.id })
   }
 
+  function openAdd() {
+    const pressMs = Date.now()
+    const hole = findOldestHole(events, pressMs)
+    const start = msToInputs(hole ? hole.start : pressMs)
+    const end = msToInputs(hole ? hole.end : pressMs)
+    const latest = events[0]
+    const latestTask = latest ? tasks.find((t) => t.id === latest.taskId) : null
+    const task = latestTask ?? tasks[0] ?? null
+    setSheet({
+      type: 'add',
+      initial: {
+        folderId: task?.folderId ?? folders[0]?.id ?? '',
+        taskId: task?.id ?? '',
+        startDate: start.date,
+        startTime: start.time,
+        endDate: end.date,
+        endTime: end.time,
+      },
+    })
+  }
+
   async function openJoin(newer: Event, older: Event, btn: HTMLElement) {
     try {
       const iso = await alignBoundary(older.id, newer.id)
@@ -158,6 +239,18 @@ export function ActivityScreen() {
 
   return (
     <section className={styles.root}>
+      <div className={chrome.addBar}>
+        <button
+          type="button"
+          className={chrome.plus}
+          aria-label="記録を追加"
+          disabled={busy || tasks.length === 0}
+          onClick={openAdd}
+        >
+          ＋
+        </button>
+      </div>
+
       {error && <ErrorBanner message={error} onDismiss={clearError} />}
 
       {events.length === 0 ? (
@@ -275,10 +368,18 @@ export function ActivityScreen() {
               dateTimeInputToIso(j.date, time),
             )
           }}
+          onCancel={() => setJoin(null)}
         />
       )}
       {sheet.type === 'edit' && (
         <EventEditModal eventId={sheet.id} onClose={closeSheet} />
+      )}
+      {sheet.type === 'add' && (
+        <EventEditModal
+          mode="add"
+          initial={sheet.initial}
+          onClose={closeSheet}
+        />
       )}
     </section>
   )

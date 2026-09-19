@@ -64,13 +64,36 @@
 }
 
 .panel {
-  position: fixed;
-  z-index: 400;
-  width: 280px;
-  max-width: calc(100vw - 16px);
+  position: relative;
+  width: 100%;
   padding: 10px;
   border-radius: 12px;
   background: var(--panel);
   border: 1px solid var(--line);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+
+.stack {
+  position: fixed;
+  z-index: 400;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 280px;
+  max-width: calc(100vw - 16px);
+  gap: 8px;
+  filter: drop-shadow(0 10px 16px rgba(0, 0, 0, 0.35));
+}
+
+.cancel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 50%;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.88rem;
 }

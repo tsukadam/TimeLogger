@@ -28,7 +28,10 @@
 .column {
   position: relative;
   height: 100%;
-  width: 52px;
+  flex: 1 1 0;
+  width: auto;
+  min-width: 36px;
+  max-width: 64px;
   overflow: hidden;
   touch-action: none;
   user-select: none;
