@@ -24,12 +24,29 @@ export type Folder = {
   updatedAt: string
 }
 
+/**
+ * タスク色がフォルダ基準パレットのどのマス由来かの座標。
+ * これが正本で、`Task.color` はここから計算した結果の焼き付け。
+ * 自由指定（ピッカー）は座標を持たない（`null`）＝フォルダ色を変えても追従しない。
+ */
+export type TaskColorRef = {
+  /** 色相 0..4（2 がフォルダ色と同じ色相） */
+  hue: number
+  /** 彩度 0..2（1 が基準） */
+  sat: number
+  /** 明暗 0..2（0 暗 / 1 元 / 2 明） */
+  light: number
+}
+
 /** タスク */
 export type Task = {
   id: string
   folderId: string
   name: string
+  /** CSS で使える色 (#RRGGBB)。colorRef があればそこから算出した値 */
   color: string
+  /** null / 欄なしは自由指定 */
+  colorRef?: TaskColorRef | null
   sortOrder: number
   createdAt: string
   updatedAt: string

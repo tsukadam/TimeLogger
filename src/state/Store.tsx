@@ -8,39 +8,46 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { fetchResource, isOnline, putResource, reportDebugLog, WRITE_SLOW_MS } from '../api/client'
-import { newId } from '../lib/id'
-import { remapPaletteTaskColor } from '../lib/color'
-import { elapsedMs, MIN_RECORD_MS, nowIso } from '../lib/time'
+import {
+  fetchResource,
+  isOnline,
+  postAdd,
+  postDelete,
+  postFolderDelete,
+  postFolderMove,
+  postFolderSave,
+  postJoin,
+  postStart,
+  postStop,
+  postTaskDelete,
+  postTaskReorder,
+  postTaskSave,
+  postUpdate,
+  putResource,
+  reportDebugLog,
+  WRITE_SLOW_MS,
+  type TasksWriteResult,
+} from '../api/client'
+import { taskColorFromRef } from '../lib/color'
+import { nowIso } from '../lib/time'
 import type {
   Event,
+  EventsFile,
   EventsIndex,
   Folder,
   LogPrefs,
   SettingsFile,
   Task,
+  TaskColorRef,
   TasksFile,
 } from '../types'
-import { validateEventRange } from './eventValidation'
-import {
-  SNAP_MS,
-  alignBoundaryMs,
-  eventEndMs,
-  eventStartMs,
-  eventsChrono,
-  snapEventTimes,
-  type EventTimePatch,
-} from './eventSnap'
 import {
   type ChunkMap,
   fetchBootEvents,
-  findChunkIdForEvent,
   hasMoreOlderChunks,
   loadChunks,
   mergeChunkEvents,
   nextOlderChunkId,
-  persistChunkUpdates,
-  quarterIdFromIso,
   rangeChunkIds,
 } from './eventsRepository'
 
@@ -59,7 +66,12 @@ type StoreActions = {
   clearError: () => void
   saveLogPrefs: (prefs: LogPrefs) => Promise<void>
   addFolder: (name: string, color: string) => Promise<void>
-  addTask: (folderId: string, name: string, color: string) => Promise<void>
+  addTask: (
+    folderId: string,
+    name: string,
+    color: string,
+    colorRef: TaskColorRef | null,
+  ) => Promise<void>
   updateFolder: (
     folderId: string,
     patch: { name: string; color: string },
@@ -68,7 +80,12 @@ type StoreActions = {
   reorderTasks: (folderId: string, orderedIds: string[]) => Promise<void>
   updateTask: (
     taskId: string,
-    patch: { name: string; color: string; folderId: string },
+    patch: {
+      name: string
+      color: string
+      folderId: string
+      colorRef: TaskColorRef | null
+    },
   ) => Promise<void>
   updateEvent: (
     eventId: string,
@@ -88,7 +105,6 @@ type StoreActions = {
   deleteTask: (taskId: string) => Promise<void>
   startTask: (taskId: string) => Promise<void>
   stopCurrent: () => Promise<void>
-  alignBoundary: (olderId: string, newerId: string) => Promise<string>
   setBoundary: (olderId: string, newerId: string, iso: string) => Promise<void>
   loadOlderEvents: () => Promise<void>
   ensureEventsForRange: (startMs: number, endMs: number) => Promise<void>
@@ -102,98 +118,6 @@ function requireOnline(): void {
   if (!isOnline()) {
     throw new Error('オフラインです')
   }
-}
-
-/**
- * 記録中イベントを締める。
- * 経過 < MIN_RECORD_MS なら行ごと削除（誤タップ扱い）。
- * それ以外は endedAt を付ける。
- * 同時に複数の未終了があっても全て処理する（壊れた状態の修復も兼ねる）。
- */
-function closeOrDiscardOpen(
-  events: Event[],
-  endMs: number,
-  endIso: string,
-): Event[] {
-  const next: Event[] = []
-  for (const ev of events) {
-    if (ev.endedAt !== null) {
-      next.push(ev)
-      continue
-    }
-    const startMs = new Date(ev.startedAt).getTime()
-    const elapsed = elapsedMs(ev.startedAt, null, endMs)
-    // 念のため startMs も照合（NaN 防止）
-    if (!Number.isFinite(startMs) || elapsed < MIN_RECORD_MS) {
-      // 破棄: next に入れない
-      continue
-    }
-    next.push({ ...ev, endedAt: endIso, updatedAt: endIso })
-  }
-  return next
-}
-
-/** 未終了イベントがあったチャンクだけ、締めた events 配列を返す */
-function closeOpenAcrossChunks(
-  chunks: ChunkMap,
-  endMs: number,
-  endIso: string,
-): Record<string, Event[]> {
-  const dirty: Record<string, Event[]> = {}
-  for (const [id, file] of Object.entries(chunks)) {
-    if (!file.events.some((e) => e.endedAt === null)) continue
-    dirty[id] = closeOrDiscardOpen(file.events, endMs, endIso)
-  }
-  return dirty
-}
-
-function cloneChunkEvents(
-  chunks: ChunkMap,
-  id: string,
-  dirty: Map<string, Event[]>,
-): Event[] {
-  let list = dirty.get(id)
-  if (!list) {
-    list = [...(chunks[id]?.events ?? [])]
-    dirty.set(id, list)
-  }
-  return list
-}
-
-/** 複数記録の時刻パッチをチャンク更新にまとめる（開始四半期が変われば移動） */
-function chunkUpdatesForPatches(
-  chunks: ChunkMap,
-  patches: EventTimePatch[],
-  stamp: string,
-): Record<string, Event[]> {
-  const dirty = new Map<string, Event[]>()
-  const loc = new Map<string, string>()
-  for (const [cid, file] of Object.entries(chunks)) {
-    for (const ev of file.events) loc.set(ev.id, cid)
-  }
-  for (const p of patches) {
-    const fromId = loc.get(p.id)
-    if (!fromId) throw new Error('記録が見つかりません')
-    const fromList = cloneChunkEvents(chunks, fromId, dirty)
-    const i = fromList.findIndex((e) => e.id === p.id)
-    if (i < 0) throw new Error('記録が見つかりません')
-    const prev = fromList[i]!
-    const updated: Event = {
-      ...prev,
-      ...(p.startedAt !== undefined ? { startedAt: p.startedAt } : {}),
-      ...(p.endedAt !== undefined ? { endedAt: p.endedAt } : {}),
-      updatedAt: stamp,
-    }
-    const toId = quarterIdFromIso(updated.startedAt)
-    if (toId === fromId) {
-      fromList[i] = updated
-      continue
-    }
-    fromList.splice(i, 1)
-    cloneChunkEvents(chunks, toId, dirty).push(updated)
-    loc.set(p.id, toId)
-  }
-  return Object.fromEntries(dirty)
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -280,11 +204,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setChunks(next)
   }, [])
 
-  const applyPersistResult = useCallback(
-    (result: { chunks: ChunkMap; index: EventsIndex }) => {
-      applyChunkPatch(result.chunks)
+  const applyCommandResult = useCallback(
+    (result: {
+      index: EventsIndex
+      chunks: Record<string, EventsFile>
+    }) => {
       eventsIndexRef.current = result.index
       setEventsIndex(result.index)
+      const ids = Object.keys(result.chunks)
+      if (ids.length === 0) return
+      applyChunkPatch(result.chunks)
     },
     [applyChunkPatch],
   )
@@ -319,63 +248,44 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [ensureChunks],
   )
 
+  const applyTasksResult = useCallback(
+    (result: TasksWriteResult) => {
+      setTasksFile(result.tasks)
+      // task-delete が記録を閉じたときだけ index / chunks が付いてくる
+      if (result.index && result.chunks) {
+        applyCommandResult({ index: result.index, chunks: result.chunks })
+      }
+    },
+    [applyCommandResult],
+  )
+
   const addFolder = useCallback(
     async (name: string, color: string) => {
-      if (!tasksFile) return
       const trimmed = name.trim()
       if (!trimmed) return
       await runWrite(async () => {
-        const t = nowIso()
-        const next: TasksFile = {
-          ...tasksFile,
-          folders: [
-            ...tasksFile.folders,
-            {
-              id: newId(),
-              name: trimmed,
-              color,
-              sortOrder: tasksFile.folders.length,
-              createdAt: t,
-              updatedAt: t,
-            },
-          ],
-          updatedAt: t,
-        }
-        const saved = await putResource('tasks', next)
-        setTasksFile(saved)
+        applyTasksResult(await postFolderSave({ name: trimmed, color }))
       })
     },
-    [runWrite, tasksFile],
+    [applyTasksResult, runWrite],
   )
 
   const addTask = useCallback(
-    async (folderId: string, name: string, color: string) => {
-      if (!tasksFile) return
+    async (
+      folderId: string,
+      name: string,
+      color: string,
+      colorRef: TaskColorRef | null,
+    ) => {
       const trimmed = name.trim()
       if (!trimmed) return
       await runWrite(async () => {
-        const t = nowIso()
-        const next: TasksFile = {
-          ...tasksFile,
-          tasks: [
-            ...tasksFile.tasks,
-            {
-              id: newId(),
-              folderId,
-              name: trimmed,
-              color,
-              sortOrder: tasksFile.tasks.filter((x) => x.folderId === folderId).length,
-              createdAt: t,
-              updatedAt: t,
-            },
-          ],
-          updatedAt: t,
-        }
-        const saved = await putResource('tasks', next)
-        setTasksFile(saved)
+        applyTasksResult(
+          await postTaskSave({ folderId, name: trimmed, color, colorRef }),
+        )
       })
     },
-    [runWrite, tasksFile],
+    [applyTasksResult, runWrite],
   )
 
   const updateFolder = useCallback(
@@ -383,66 +293,41 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!tasksFile) return
       const trimmed = patch.name.trim()
       if (!trimmed) return
-      await runWrite(async () => {
-        const t = nowIso()
-        const old = tasksFile.folders.find((f) => f.id === folderId)
-        const colorChanged =
-          !!old && old.color.toLowerCase() !== patch.color.toLowerCase()
-
-        const nextTasks: TasksFile = {
-          ...tasksFile,
-          folders: tasksFile.folders.map((f) =>
-            f.id === folderId
-              ? { ...f, name: trimmed, color: patch.color, updatedAt: t }
-              : f,
-          ),
-          tasks: colorChanged
-            ? tasksFile.tasks.map((task) => {
-                if (task.folderId !== folderId || !old) return task
-                const remapped = remapPaletteTaskColor(
-                  old.color,
-                  patch.color,
-                  task.color,
-                )
-                if (!remapped) return task
-                return { ...task, color: remapped, updatedAt: t }
-              })
-            : tasksFile.tasks,
-          updatedAt: t,
+      // フォルダ色を変えたら、パレット由来のタスク色を同じ座標で焼き直す。
+      // 座標を持たない（自由指定の）タスクは触らない
+      const old = tasksFile.folders.find((f) => f.id === folderId)
+      const taskColors: Record<string, string> = {}
+      if (old && old.color.toLowerCase() !== patch.color.toLowerCase()) {
+        for (const task of tasksFile.tasks) {
+          if (task.folderId !== folderId || !task.colorRef) continue
+          const next = taskColorFromRef(patch.color, task.colorRef)
+          if (next && next.toLowerCase() !== task.color.toLowerCase()) {
+            taskColors[task.id] = next
+          }
         }
-        const savedTasks = await putResource('tasks', nextTasks)
-        setTasksFile(savedTasks)
+      }
+      await runWrite(async () => {
+        applyTasksResult(
+          await postFolderSave({
+            id: folderId,
+            name: trimmed,
+            color: patch.color,
+            ...(Object.keys(taskColors).length > 0 ? { taskColors } : {}),
+          }),
+        )
         // ログ（events）の名前・色スナップショットは追従しない
       })
     },
-    [runWrite, tasksFile],
+    [applyTasksResult, runWrite, tasksFile],
   )
 
   const moveFolder = useCallback(
     async (folderId: string, dir: 1 | -1) => {
-      if (!tasksFile) return
-      const sorted = [...tasksFile.folders].sort(
-        (a, b) => a.sortOrder - b.sortOrder,
-      )
-      const i = sorted.findIndex((f) => f.id === folderId)
-      const j = i + dir
-      if (i < 0 || j < 0 || j >= sorted.length) return
       await runWrite(async () => {
-        const t = nowIso()
-        ;[sorted[i], sorted[j]] = [sorted[j]!, sorted[i]!]
-        // 入れ替え後の並びで sortOrder を振り直す
-        const next: TasksFile = {
-          ...tasksFile,
-          folders: sorted.map((f, idx) =>
-            f.sortOrder === idx ? f : { ...f, sortOrder: idx, updatedAt: t },
-          ),
-          updatedAt: t,
-        }
-        const saved = await putResource('tasks', next)
-        setTasksFile(saved)
+        applyTasksResult(await postFolderMove({ folderId, dir }))
       })
     },
-    [runWrite, tasksFile],
+    [applyTasksResult, runWrite],
   )
 
   const reorderTasks = useCallback(
@@ -451,119 +336,65 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const inFolder = tasksFile.tasks
         .filter((t) => t.folderId === folderId)
         .sort((a, b) => a.sortOrder - b.sortOrder)
+      // 並びが同じなら投げない（並びの検査自体はサーバー側でもやる）
       if (
-        orderedIds.length !== inFolder.length ||
-        orderedIds.some((id) => !inFolder.some((t) => t.id === id))
+        orderedIds.length === inFolder.length &&
+        inFolder.every((t, i) => t.id === orderedIds[i])
       ) {
         return
       }
-      const same = inFolder.every((t, i) => t.id === orderedIds[i])
-      if (same) return
       await runWrite(async () => {
-        const t = nowIso()
-        const byId = new Map(inFolder.map((task) => [task.id, task]))
-        const reordered = orderedIds.map((id, idx) => {
-          const task = byId.get(id)!
-          return task.sortOrder === idx
-            ? task
-            : { ...task, sortOrder: idx, updatedAt: t }
-        })
-        const others = tasksFile.tasks.filter((task) => task.folderId !== folderId)
-        const next: TasksFile = {
-          ...tasksFile,
-          tasks: [...others, ...reordered],
-          updatedAt: t,
-        }
-        const saved = await putResource('tasks', next)
-        setTasksFile(saved)
+        applyTasksResult(await postTaskReorder({ folderId, orderedIds }))
       })
     },
-    [runWrite, tasksFile],
+    [applyTasksResult, runWrite, tasksFile],
   )
 
   const updateTask = useCallback(
     async (
       taskId: string,
-      patch: { name: string; color: string; folderId: string },
+      patch: {
+        name: string
+        color: string
+        folderId: string
+        colorRef: TaskColorRef | null
+      },
     ) => {
-      if (!tasksFile) return
       const trimmed = patch.name.trim()
       if (!trimmed) return
       await runWrite(async () => {
-        const t = nowIso()
-        const nextTasks: TasksFile = {
-          ...tasksFile,
-          tasks: tasksFile.tasks.map((task) =>
-            task.id === taskId
-              ? {
-                  ...task,
-                  name: trimmed,
-                  color: patch.color,
-                  folderId: patch.folderId,
-                  updatedAt: t,
-                }
-              : task,
-          ),
-          updatedAt: t,
-        }
-        const savedTasks = await putResource('tasks', nextTasks)
-        setTasksFile(savedTasks)
+        applyTasksResult(
+          await postTaskSave({
+            id: taskId,
+            folderId: patch.folderId,
+            name: trimmed,
+            color: patch.color,
+            colorRef: patch.colorRef,
+          }),
+        )
         // ログ（events）の名前・色スナップショットは追従しない
       })
     },
-    [runWrite, tasksFile],
+    [applyTasksResult, runWrite],
   )
 
   const deleteFolder = useCallback(
     async (folderId: string) => {
-      if (!tasksFile) return
-      if (tasksFile.tasks.some((t) => t.folderId === folderId)) {
-        throw new Error('タスクがあるフォルダは削除できません')
-      }
       await runWrite(async () => {
-        const t = nowIso()
-        const next: TasksFile = {
-          ...tasksFile,
-          folders: tasksFile.folders.filter((f) => f.id !== folderId),
-          updatedAt: t,
-        }
-        const saved = await putResource('tasks', next)
-        setTasksFile(saved)
+        applyTasksResult(await postFolderDelete({ folderId }))
       })
     },
-    [runWrite, tasksFile],
+    [applyTasksResult, runWrite],
   )
 
   const deleteTask = useCallback(
     async (taskId: string) => {
-      if (!tasksFile) return
       await runWrite(async () => {
-        const t = nowIso()
-        const next: TasksFile = {
-          ...tasksFile,
-          tasks: tasksFile.tasks.filter((task) => task.id !== taskId),
-          updatedAt: t,
-        }
-        const saved = await putResource('tasks', next)
-        setTasksFile(saved)
-
-        // 記録中のタスクを消したら、記録も停止する
-        const open = mergeChunkEvents(chunksRef.current).find(
-          (e) => e.endedAt === null,
-        )
-        const index = eventsIndexRef.current
-        if (index && open && open.taskId === taskId) {
-          const endMs = Date.now()
-          const endIso = nowIso(new Date(endMs))
-          const dirty = closeOpenAcrossChunks(chunksRef.current, endMs, endIso)
-          if (Object.keys(dirty).length > 0) {
-            const result = await persistChunkUpdates(dirty, index)
-            applyPersistResult(result)
-          }
-        }
+        // 記録中のタスクなら、サーバー側が同じ錠の中で記録も閉じる
+        applyTasksResult(await postTaskDelete({ taskId }))
       })
     },
-    [applyPersistResult, runWrite, tasksFile],
+    [applyTasksResult, runWrite],
   )
 
   const updateEvent = useCallback(
@@ -575,381 +406,65 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         endedAt: string | null
       },
     ) => {
-      if (!tasksFile || !eventsIndexRef.current) return
-      const task = tasksFile.tasks.find((x) => x.id === patch.taskId)
-      if (!task) throw new Error('タスクが見つかりません')
-      const folder = tasksFile.folders.find((x) => x.id === task.folderId)
-      if (!folder) throw new Error('フォルダが見つかりません')
-
-      let startMs = new Date(patch.startedAt).getTime()
-      const nowMs = Date.now()
-      const endedAt = patch.endedAt
-      // 記録中は現在時刻まで占有しているとみなす
-      let endMs = nowMs
-      let validateEndBound = false
-      if (endedAt !== null) {
-        endMs = new Date(endedAt).getTime()
-        validateEndBound = true
-      }
-      await ensureEventsForRange(startMs, endMs)
-      const all = mergeChunkEvents(chunksRef.current)
-      const prevStored = all.find((e) => e.id === eventId)
-      let move: 'start' | 'end' | 'both' = 'both'
-      if (prevStored) {
-        const oldS = new Date(prevStored.startedAt).getTime()
-        const oldE = prevStored.endedAt
-          ? new Date(prevStored.endedAt).getTime()
-          : null
-        const startCh = startMs !== oldS
-        const endCh =
-          endedAt !== null && oldE !== null && endMs !== oldE
-        if (startCh && !endCh) move = 'start'
-        else if (!startCh && endCh) move = 'end'
-      }
-      const snapped = snapEventTimes({
-        events: all,
-        excludeId: eventId,
-        startMs,
-        endMs: endedAt === null ? null : endMs,
-        nowMs,
-        move,
-      })
-      startMs = snapped.startMs
-      if (snapped.endMs !== null) endMs = snapped.endMs
-      const startedAt =
-        snapped.startMs === new Date(patch.startedAt).getTime()
-          ? patch.startedAt
-          : nowIso(new Date(snapped.startMs))
-      const endedAtIso =
-        endedAt === null
-          ? null
-          : snapped.endMs === new Date(endedAt).getTime()
-            ? endedAt
-            : nowIso(new Date(snapped.endMs!))
-
-      validateEventRange({
-        events: mergeChunkEvents(chunksRef.current),
-        startMs,
-        endMs,
-        excludeId: eventId,
-        nowMs,
-        validateEndBound,
-      })
-
       await runWrite(async () => {
-        const index = eventsIndexRef.current
-        if (!index) throw new Error('記録の目次がありません')
-
-        const oldChunkId = findChunkIdForEvent(chunksRef.current, eventId)
-        if (!oldChunkId) throw new Error('記録が見つかりません')
-
-        const prevList = chunksRef.current[oldChunkId]?.events ?? []
-        const prev = prevList.find((e) => e.id === eventId)
-        if (!prev) throw new Error('記録が見つかりません')
-
-        // 記録中は終了を触れない（endedAt は null のまま）
-        if (prev.endedAt === null && endedAt !== null) {
-          throw new Error('記録中の終了時刻は編集できません')
-        }
-        if (prev.endedAt !== null && endedAt === null) {
-          throw new Error('終了済みの記録を記録中には戻せません')
-        }
-
-        const t = nowIso()
-        const taskChanged = prev.taskId !== task.id
-        const updated: Event = {
-          ...prev,
-          taskId: task.id,
-          folderId: folder.id,
-          // タスク割当を変えたときだけ、その時点のマスタ名でスナップショットを差し替え
-          ...(taskChanged
-            ? {
-                taskName: task.name,
-                folderName: folder.name,
-                taskColor: task.color,
-                folderColor: folder.color,
-              }
-            : {}),
-          startedAt,
-          endedAt: prev.endedAt === null ? null : endedAtIso,
-          updatedAt: t,
-        }
-
-        const neighborUpdates = snapped.patches.length
-          ? chunkUpdatesForPatches(chunksRef.current, snapped.patches, t)
-          : {}
-        const oldList =
-          neighborUpdates[oldChunkId] ??
-          chunksRef.current[oldChunkId]?.events ??
-          []
-        const newChunkId = quarterIdFromIso(startedAt)
-        const updates: Record<string, Event[]> = { ...neighborUpdates }
-
-        if (newChunkId === oldChunkId) {
-          updates[oldChunkId] = oldList.map((e) =>
-            e.id === eventId ? updated : e,
-          )
-        } else {
-          if (index.chunks.includes(newChunkId)) {
-            await ensureChunks([newChunkId])
-          }
-          updates[oldChunkId] = oldList.filter((e) => e.id !== eventId)
-          const dest =
-            updates[newChunkId] ??
-            chunksRef.current[newChunkId]?.events ??
-            []
-          updates[newChunkId] = [...dest, updated]
-        }
-
-        const result = await persistChunkUpdates(updates, index)
-        applyPersistResult(result)
+        const result = await postUpdate({
+          eventId,
+          taskId: patch.taskId,
+          startedAt: patch.startedAt,
+          endedAt: patch.endedAt,
+        })
+        applyCommandResult(result)
       })
     },
-    [applyPersistResult, ensureChunks, ensureEventsForRange, runWrite, tasksFile],
+    [applyCommandResult, runWrite],
   )
 
   const addEvent = useCallback(
     async (patch: { taskId: string; startedAt: string; endedAt: string }) => {
-      if (!tasksFile || !eventsIndexRef.current) return
-      const task = tasksFile.tasks.find((x) => x.id === patch.taskId)
-      if (!task) throw new Error('タスクが見つかりません')
-      const folder = tasksFile.folders.find((x) => x.id === task.folderId)
-      if (!folder) throw new Error('フォルダが見つかりません')
-
-      const startMs0 = new Date(patch.startedAt).getTime()
-      const endMs0 = new Date(patch.endedAt).getTime()
-      const qid = quarterIdFromIso(patch.startedAt)
-      await ensureEventsForRange(startMs0, endMs0)
-      // index に無い四半期でも後で persist が作る。既存ならロード済みにする
-      if (eventsIndexRef.current?.chunks.includes(qid)) {
-        await ensureChunks([qid])
-      }
-      const snapped = snapEventTimes({
-        events: mergeChunkEvents(chunksRef.current),
-        excludeId: null,
-        startMs: startMs0,
-        endMs: endMs0,
-        nowMs: Date.now(),
-        move: 'both',
-      })
-      const startMs = snapped.startMs
-      const endMs = snapped.endMs!
-      const startedAt =
-        startMs === startMs0 ? patch.startedAt : nowIso(new Date(startMs))
-      const endedAt =
-        endMs === endMs0 ? patch.endedAt : nowIso(new Date(endMs))
-      const addQid = quarterIdFromIso(startedAt)
-      if (eventsIndexRef.current?.chunks.includes(addQid)) {
-        await ensureChunks([addQid])
-      }
-      validateEventRange({
-        events: mergeChunkEvents(chunksRef.current),
-        startMs,
-        endMs,
-        excludeId: null,
-        nowMs: Date.now(),
-        validateEndBound: true,
-      })
-
       await runWrite(async () => {
-        const index = eventsIndexRef.current
-        if (!index) throw new Error('記録の目次がありません')
-        const t = nowIso()
-        const ev: Event = {
-          id: newId(),
-          taskId: task.id,
-          folderId: folder.id,
-          taskName: task.name,
-          folderName: folder.name,
-          taskColor: task.color,
-          folderColor: folder.color,
-          startedAt,
-          endedAt,
-          createdAt: t,
-          updatedAt: t,
-        }
-        const neighborUpdates = snapped.patches.length
-          ? chunkUpdatesForPatches(chunksRef.current, snapped.patches, t)
-          : {}
-        const base =
-          neighborUpdates[addQid] ?? chunksRef.current[addQid]?.events ?? []
-        const result = await persistChunkUpdates(
-          { ...neighborUpdates, [addQid]: [...base, ev] },
-          index,
-        )
-        applyPersistResult(result)
+        const result = await postAdd(patch)
+        applyCommandResult(result)
       })
     },
-    [applyPersistResult, ensureChunks, ensureEventsForRange, runWrite, tasksFile],
+    [applyCommandResult, runWrite],
   )
 
   const deleteEvent = useCallback(
     async (eventId: string) => {
-      if (!eventsIndexRef.current) return
-      const chunkId = findChunkIdForEvent(chunksRef.current, eventId)
-      if (!chunkId) return
       await runWrite(async () => {
-        const index = eventsIndexRef.current
-        if (!index) return
-        const list = (chunksRef.current[chunkId]?.events ?? []).filter(
-          (e) => e.id !== eventId,
-        )
-        const result = await persistChunkUpdates({ [chunkId]: list }, index)
-        applyPersistResult(result)
+        const result = await postDelete({ eventId })
+        applyCommandResult(result)
       })
     },
-    [applyPersistResult, runWrite],
+    [applyCommandResult, runWrite],
   )
 
   const startTask = useCallback(
     async (taskId: string) => {
-      if (!tasksFile || !eventsIndexRef.current) return
-      const task = tasksFile.tasks.find((x) => x.id === taskId)
-      if (!task) return
-      const folder = tasksFile.folders.find((x) => x.id === task.folderId)
-      if (!folder) return
-
       await runWrite(async () => {
-        const index = eventsIndexRef.current
-        if (!index) return
-        const endMs = Date.now()
-        const t = nowIso(new Date(endMs))
-        const dirty = closeOpenAcrossChunks(chunksRef.current, endMs, t)
-        const overlay: ChunkMap = { ...chunksRef.current }
-        for (const [id, events] of Object.entries(dirty)) {
-          overlay[id] = { events, updatedAt: overlay[id]?.updatedAt ?? t }
-        }
-        const lastEnded = eventsChrono(mergeChunkEvents(overlay))
-          .filter((e) => e.endedAt !== null)
-          .at(-1)
-        let startIso = t
-        if (lastEnded?.endedAt) {
-          const lastEnd = new Date(lastEnded.endedAt).getTime()
-          if (lastEnd !== endMs && Math.abs(endMs - lastEnd) <= SNAP_MS) {
-            const mid = Math.round((lastEnd + endMs) / 2)
-            startIso = nowIso(new Date(mid))
-            const lastChunk = findChunkIdForEvent(overlay, lastEnded.id)
-            if (lastChunk) {
-              const list = dirty[lastChunk] ?? [...(overlay[lastChunk]?.events ?? [])]
-              dirty[lastChunk] = list.map((e) =>
-                e.id === lastEnded.id
-                  ? { ...e, endedAt: startIso, updatedAt: t }
-                  : e,
-              )
-            }
-          }
-        }
-        const qid = quarterIdFromIso(startIso)
-        const base = dirty[qid] ?? chunksRef.current[qid]?.events ?? []
-        const started: Event = {
-          id: newId(),
-          taskId: task.id,
-          folderId: folder.id,
-          taskName: task.name,
-          folderName: folder.name,
-          taskColor: task.color,
-          folderColor: folder.color,
-          startedAt: startIso,
-          endedAt: null,
-          createdAt: t,
-          updatedAt: t,
-        }
-        dirty[qid] = [...base, started]
-        const result = await persistChunkUpdates(dirty, index)
-        applyPersistResult(result)
+        const result = await postStart({ taskId })
+        applyCommandResult(result)
       })
     },
-    [applyPersistResult, runWrite, tasksFile],
+    [applyCommandResult, runWrite],
   )
 
   const stopCurrent = useCallback(async () => {
-    if (!eventsIndexRef.current) return
     await runWrite(async () => {
-      const index = eventsIndexRef.current
-      if (!index) return
-      const endMs = Date.now()
-      const t = nowIso(new Date(endMs))
-      const dirty = closeOpenAcrossChunks(chunksRef.current, endMs, t)
-      if (Object.keys(dirty).length === 0) return
-      const result = await persistChunkUpdates(dirty, index)
-      applyPersistResult(result)
+      const result = await postStop()
+      applyCommandResult(result)
     })
-  }, [applyPersistResult, runWrite])
+  }, [applyCommandResult, runWrite])
 
-  const alignBoundary = useCallback(
-    async (olderId: string, newerId: string) => {
-      if (!eventsIndexRef.current) throw new Error('記録の目次がありません')
-      const all = mergeChunkEvents(chunksRef.current)
-      const older = all.find((e) => e.id === olderId)
-      const newer = all.find((e) => e.id === newerId)
-      if (!older || !newer) throw new Error('記録が見つかりません')
-      if (!older.endedAt) throw new Error('前の記録が終了していません')
-      const nowMs = Date.now()
-      const olderEnd = eventEndMs(older, nowMs)
-      const newerStart = eventStartMs(newer)
-      const mid = alignBoundaryMs(olderEnd, newerStart)
-      if (mid - eventStartMs(older) < MIN_RECORD_MS) {
-        throw new Error('前の記録が1秒未満になります')
-      }
-      if (newer.endedAt && eventEndMs(newer, nowMs) - mid < MIN_RECORD_MS) {
-        throw new Error('次の記録が1秒未満になります')
-      }
-      const iso = nowIso(new Date(mid))
-      if (olderEnd === newerStart) return older.endedAt
-      await runWrite(async () => {
-        const index = eventsIndexRef.current
-        if (!index) throw new Error('記録の目次がありません')
-        const t = nowIso()
-        const updates = chunkUpdatesForPatches(
-          chunksRef.current,
-          [
-            { id: olderId, endedAt: iso },
-            { id: newerId, startedAt: iso },
-          ],
-          t,
-        )
-        const result = await persistChunkUpdates(updates, index)
-        applyPersistResult(result)
-      })
-      return iso
-    },
-    [applyPersistResult, runWrite],
-  )
-
+  /** 境界（⇔）の確定。中点を出すだけの段階では呼ばない */
   const setBoundary = useCallback(
     async (olderId: string, newerId: string, iso: string) => {
-      if (!eventsIndexRef.current) throw new Error('記録の目次がありません')
-      const all = mergeChunkEvents(chunksRef.current)
-      const older = all.find((e) => e.id === olderId)
-      const newer = all.find((e) => e.id === newerId)
-      if (!older || !newer) throw new Error('記録が見つかりません')
-      if (!older.endedAt) throw new Error('前の記録が終了していません')
-      const nowMs = Date.now()
-      const mid = new Date(iso).getTime()
-      if (!Number.isFinite(mid)) throw new Error('時刻が不正です')
-      if (mid - eventStartMs(older) < MIN_RECORD_MS) {
-        throw new Error('前の記録が1秒未満になります')
-      }
-      if (newer.endedAt && eventEndMs(newer, nowMs) - mid < MIN_RECORD_MS) {
-        throw new Error('次の記録が1秒未満になります')
-      }
       await runWrite(async () => {
-        const index = eventsIndexRef.current
-        if (!index) throw new Error('記録の目次がありません')
-        const t = nowIso()
-        const updates = chunkUpdatesForPatches(
-          chunksRef.current,
-          [
-            { id: olderId, endedAt: iso },
-            { id: newerId, startedAt: iso },
-          ],
-          t,
-        )
-        const result = await persistChunkUpdates(updates, index)
-        applyPersistResult(result)
+        const result = await postJoin({ olderId, newerId, at: iso })
+        applyCommandResult(result)
       })
     },
-    [applyPersistResult, runWrite],
+    [applyCommandResult, runWrite],
   )
 
   const saveLogPrefs = useCallback(
@@ -1022,7 +537,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       deleteTask,
       startTask,
       stopCurrent,
-      alignBoundary,
       setBoundary,
       loadOlderEvents,
       ensureEventsForRange,
@@ -1043,7 +557,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       deleteTask,
       startTask,
       stopCurrent,
-      alignBoundary,
       setBoundary,
       loadOlderEvents,
       ensureEventsForRange,

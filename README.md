@@ -15,7 +15,8 @@
 ## スタック
 
 - Vite + React + TypeScript + PWA（vite-plugin-pwa）
-- サーバー側は PHP 1 ファイル（`api/index.php`）が `data/*.json` を GET/PUT するだけ
+- サーバー側は PHP（`api/index.php` + `api/commands.php`）。記録もフォルダ／タスクも書き込みはコマンド API。読みと、設定・目次の書きは JSON ファイルの GET/PUT
+- HTTP の正本は [docs/api.md](docs/api.md)
 - 想定デプロイ先はレンタルサーバー（PHP が動けば OK）
 
 ## 開発

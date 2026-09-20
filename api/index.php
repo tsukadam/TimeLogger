@@ -2,11 +2,44 @@
 /**
  * TimeLogger API
  *
+ * 口の正本は docs/api.md。ここを変えたらドキュメントも直す。
+ *
  * GET  /api/index.php?resource=tasks|settings|events-index
- * PUT  /api/index.php?resource=tasks|settings|events-index
+ * PUT  /api/index.php?resource=settings|events-index
+ *      tasks は PUT 不可。folder-* / task-* コマンドで書く
  * GET  /api/index.php?resource=events&chunk=2026Q3
  * PUT  /api/index.php?resource=events&chunk=2026Q3
  *      Body: 当該 JSON ファイル全体
+ *
+ * GET  /api/index.php?resource=now
+ *      記録中 1 本（なければ null）と、直前に閉じた 1 本 last、tasks の更新時刻
+ * POST /api/index.php?resource=start
+ *      Body: { taskId, at? } — 開いている記録を閉じ、同時刻に開始
+ * POST /api/index.php?resource=stop
+ *      Body: { at?, eventId? } — まだ開いている自分だけを閉じる。既に閉じていたら 409
+ * POST /api/index.php?resource=update
+ *      Body: { eventId, taskId?, startedAt?, endedAt? } — 1 件の手編集
+ * POST /api/index.php?resource=delete
+ *      Body: { eventId }
+ * POST /api/index.php?resource=add
+ *      Body: { taskId, startedAt, endedAt } — 閉じた記録の追加
+ * POST /api/index.php?resource=join
+ *      Body: { olderId, newerId, at? } — 記録と記録の境（⇔）。at 省略は中点
+ *
+ * POST /api/index.php?resource=folder-save
+ *      Body: { id?, name, color, taskColors? } — id 無しは追加
+ *      taskColors は colorRef を持つ（パレット由来の）タスクだけ
+ * POST /api/index.php?resource=folder-move
+ *      Body: { folderId, dir } — dir は 1 / -1
+ * POST /api/index.php?resource=folder-delete
+ *      Body: { folderId } — タスクが残っていれば 400
+ * POST /api/index.php?resource=task-save
+ *      Body: { id?, folderId, name, color, colorRef? } — id 無しは追加
+ *      colorRef は { hue:0-4, sat:0-2, light:0-2 } / null（自由指定）
+ * POST /api/index.php?resource=task-reorder
+ *      Body: { folderId, orderedIds }
+ * POST /api/index.php?resource=task-delete
+ *      Body: { taskId } — 記録中なら同時に記録も閉じる
  *
  * POST /api/index.php?resource=debug
  *      Body: { level, message, detail? } — data/debug.log に JSONL 追記
@@ -40,7 +73,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 $dataDir = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'data';
-$allowed = ['tasks', 'settings', 'events', 'events-index', 'debug'];
+$commands = [
+    'now', 'start', 'stop', 'update', 'delete', 'add', 'join',
+    'folder-save', 'folder-move', 'folder-delete',
+    'task-save', 'task-reorder', 'task-delete',
+];
+$allowed = array_merge(['tasks', 'settings', 'events', 'events-index', 'debug'], $commands);
 
 $resource = $_GET['resource'] ?? '';
 if (!in_array($resource, $allowed, true)) {
@@ -51,6 +89,8 @@ if (!in_array($resource, $allowed, true)) {
 
 if ($resource === 'debug') {
     $path = $dataDir . DIRECTORY_SEPARATOR . 'debug.log';
+} elseif (in_array($resource, $commands, true)) {
+    $path = '';
 } elseif ($resource === 'events-index') {
     $path = $dataDir . DIRECTORY_SEPARATOR . 'events' . DIRECTORY_SEPARATOR . 'index.json';
 } elseif ($resource === 'events') {
@@ -191,6 +231,12 @@ function trimDebugLogIfHuge(string $path, int $maxBytes = 512000, int $keepBytes
 
 $method = $_SERVER['REQUEST_METHOD'];
 
+if (in_array($resource, $commands, true)) {
+    require __DIR__ . DIRECTORY_SEPARATOR . 'commands.php';
+    handleCommand($dataDir, $resource, $method);
+    exit;
+}
+
 // --- debug: 追記専用ログ（JSONL） ---
 if ($resource === 'debug') {
     if ($method === 'GET') {
@@ -311,6 +357,9 @@ if ($method === 'GET') {
 }
 
 if ($method === 'PUT') {
+    if ($resource === 'tasks') {
+        fail(405, 'tasks は folder-save / task-save などのコマンドで書きます');
+    }
     $raw = file_get_contents('php://input');
     if ($raw === false || $raw === '') {
         fail(400, 'empty body');
@@ -328,13 +377,21 @@ if ($method === 'PUT') {
     }
     $out .= "\n";
 
-    withResourceLock($lockPath, LOCK_EX, static function () use ($path, $out): void {
-        $dir = dirname($path);
-        if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
-            fail(500, 'mkdir failed');
-        }
-        atomicReplace($path, $out);
-    });
+    $write = static function () use ($lockPath, $path, $out): void {
+        withResourceLock($lockPath, LOCK_EX, static function () use ($path, $out): void {
+            $dir = dirname($path);
+            if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+                fail(500, 'mkdir failed');
+            }
+            atomicReplace($path, $out);
+        });
+    };
+    if ($resource === 'events' || $resource === 'events-index') {
+        require_once __DIR__ . DIRECTORY_SEPARATOR . 'commands.php';
+        withResourceLock(commandsLockPath($dataDir), LOCK_EX, $write);
+    } else {
+        $write();
+    }
 
     echo json_encode(['ok' => true, 'updatedAt' => $decoded['updatedAt']], JSON_UNESCAPED_UNICODE);
     exit;

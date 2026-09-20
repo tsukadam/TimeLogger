@@ -12,7 +12,13 @@ import {
 } from '../components/TaskColorPicker'
 import form from '../components/form.module.css'
 import chrome from '../components/screenChrome.module.css'
-import { FOLDER_PALETTE, TASK_BASE_CELL, findTaskColorPos, taskColorGrid } from '../lib/color'
+import {
+  cellToRef,
+  FOLDER_PALETTE,
+  refToCell,
+  TASK_BASE_CELL,
+  taskColorGrid,
+} from '../lib/color'
 import {
   durationLabel,
   formatDurationHms,
@@ -487,8 +493,8 @@ export function TasksScreen() {
     setName(task.name)
     setFolderId(task.folderId)
     setColor(task.color)
-    const folder = folders.find((f) => f.id === task.folderId)
-    const pos = folder ? findTaskColorPos(folder.color, task.color) : null
+    // 色から位置を推測せず、保存された座標をそのまま使う
+    const pos = task.colorRef ? refToCell(task.colorRef) : null
     if (pos) {
       setColorFrom('palette')
       setPalettePos({ kind: 'task', row: pos.row, col: pos.col })
@@ -520,16 +526,21 @@ export function TasksScreen() {
   async function submitSheet() {
     const trimmed = name.trim()
     if (!trimmed) return
+    // パレットから選んだならその座標、ピッカーなら座標なし（＝追従しない）
+    const colorRef =
+      colorFrom === 'palette' && palettePos?.kind === 'task'
+        ? cellToRef(palettePos.row, palettePos.col)
+        : null
     setPendingSheet('save')
     try {
       if (sheet.type === 'add') {
         if (addTarget === 'folder') await addFolder(trimmed, color)
         else {
           if (!folderId) return
-          await addTask(folderId, trimmed, color)
+          await addTask(folderId, trimmed, color, colorRef)
         }
       } else if (sheet.type === 'add-task-in') {
-        await addTask(sheet.folderId, trimmed, color)
+        await addTask(sheet.folderId, trimmed, color, colorRef)
       } else if (sheet.type === 'edit-folder') {
         await updateFolder(sheet.id, { name: trimmed, color })
       } else if (sheet.type === 'edit-task') {
@@ -538,6 +549,7 @@ export function TasksScreen() {
           name: trimmed,
           color,
           folderId,
+          colorRef,
         })
       }
       requestCloseRef.current()

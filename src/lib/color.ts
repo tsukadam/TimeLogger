@@ -1,3 +1,5 @@
+import type { TaskColorRef } from '../types'
+
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n))
 }
@@ -87,6 +89,51 @@ function buildRow(h: number, baseS: number, baseL: number): string[] {
 /** 中央行・基準彩度グループの「元」マス index = 1*3 + 1 */
 export const TASK_BASE_CELL = { row: 2, col: 4 } as const
 
+/** 各軸の段数。行 = 色相、列 = 彩度 × 明暗 */
+export const TASK_COLOR_AXES = {
+  hue: HUE_ROW_OFFSETS.length,
+  sat: S_DELTAS.length,
+  light: L_LEVELS.length,
+} as const
+
+/** 格子の行列 → 3軸座標 */
+export function cellToRef(row: number, col: number): TaskColorRef {
+  return {
+    hue: row,
+    sat: Math.floor(col / TASK_COLOR_AXES.light),
+    light: col % TASK_COLOR_AXES.light,
+  }
+}
+
+/** 3軸座標 → 格子の行列 */
+export function refToCell(ref: TaskColorRef): { row: number; col: number } {
+  return { row: ref.hue, col: ref.sat * TASK_COLOR_AXES.light + ref.light }
+}
+
+function inAxis(n: unknown, size: number): boolean {
+  return typeof n === 'number' && Number.isInteger(n) && n >= 0 && n < size
+}
+
+export function isTaskColorRef(value: unknown): value is TaskColorRef {
+  if (typeof value !== 'object' || value === null) return false
+  const v = value as Record<string, unknown>
+  return (
+    inAxis(v.hue, TASK_COLOR_AXES.hue) &&
+    inAxis(v.sat, TASK_COLOR_AXES.sat) &&
+    inAxis(v.light, TASK_COLOR_AXES.light)
+  )
+}
+
+/** 座標とフォルダ色から実際のタスク色。座標が壊れていれば null */
+export function taskColorFromRef(
+  folderColor: string,
+  ref: TaskColorRef,
+): string | null {
+  if (!isTaskColorRef(ref)) return null
+  const { row, col } = refToCell(ref)
+  return taskColorGrid(folderColor)[row]?.[col] ?? null
+}
+
 /**
  * タスク色グリッド 5行×9列
  * - 中央行・元マス = フォルダ色
@@ -106,7 +153,11 @@ export function taskColorGrid(baseHex: string): string[][] {
   })
 }
 
-/** タスク色がフォルダ基準グリッド上のどのマスか（カスタムなら null） */
+/**
+ * タスク色がフォルダ基準グリッド上のどのマスか（見つからなければ null）。
+ * 色から座標を推測する後ろ向きの引きなので、`colorRef` を持たない
+ * 古い行の移行にだけ使う。選んだ時点の座標があるなら必ずそちらを使う。
+ */
 export function findTaskColorPos(
   folderColor: string,
   taskColor: string,
@@ -121,20 +172,6 @@ export function findTaskColorPos(
     }
   }
   return null
-}
-
-/**
- * フォルダ色変更時、候補マス由来なら同位置の新色へ。
- * ピッカー色（グリッドに無い）はそのまま → null。
- */
-export function remapPaletteTaskColor(
-  oldFolderColor: string,
-  newFolderColor: string,
-  taskColor: string,
-): string | null {
-  const pos = findTaskColorPos(oldFolderColor, taskColor)
-  if (!pos) return null
-  return taskColorGrid(newFolderColor)[pos.row]![pos.col]!
 }
 
 /** フォルダ用デフォルト色（適当な固定パレット） */

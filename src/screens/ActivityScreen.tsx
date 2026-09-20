@@ -20,7 +20,12 @@ import {
 import { rectToAnchor, type PanelAnchor } from '../lib/placePanel'
 import { useNowTick } from '../lib/useNowTick'
 import { useStoreActions, useStoreBusy, useStoreData } from '../state/Store'
-import { boundsForJoin } from '../state/eventSnap'
+import {
+  alignBoundaryMs,
+  boundsForJoin,
+  eventEndMs,
+  eventStartMs,
+} from '../state/eventSnap'
 import type { Event } from '../types'
 import { resolveDisplay } from './log/aggregate'
 import styles from './ActivityScreen.module.css'
@@ -105,8 +110,7 @@ export function ActivityScreen() {
   const busy = useStoreBusy()
   const { loading, error, events, tasks, folders, hasMoreOlderEvents } =
     useStoreData()
-  const { clearError, loadOlderEvents, alignBoundary, setBoundary } =
-    useStoreActions()
+  const { clearError, loadOlderEvents, setBoundary } = useStoreActions()
   const [visible, setVisible] = useState(PAGE)
   const [sheet, setSheet] = useState<SheetState>({ type: 'closed' })
   const [join, setJoin] = useState<{
@@ -208,27 +212,22 @@ export function ActivityScreen() {
     })
   }
 
-  async function openJoin(newer: Event, older: Event, btn: HTMLElement) {
-    try {
-      const iso = await alignBoundary(older.id, newer.id)
-      const nowMs = Date.now()
-      const bound = boundsForJoin({
-        older: { ...older, endedAt: iso },
-        newer: { ...newer, startedAt: iso },
-        nowMs,
-      })
-      setJoin({
-        olderId: older.id,
-        newerId: newer.id,
-        date: dateKey(iso),
-        time: isoToTimeInput(iso),
-        minMs: bound.minMs,
-        maxMs: bound.maxMs,
-        anchor: rectToAnchor(btn.getBoundingClientRect()),
-      })
-    } catch {
-      /* Store が表示 */
-    }
+  // 押した時点では書かない。中点を初期値として出すだけ。書くのは決定時
+  function openJoin(newer: Event, older: Event, btn: HTMLElement) {
+    const nowMs = Date.now()
+    const iso = nowIso(
+      new Date(alignBoundaryMs(eventEndMs(older, nowMs), eventStartMs(newer))),
+    )
+    const bound = boundsForJoin({ older, newer, nowMs })
+    setJoin({
+      olderId: older.id,
+      newerId: newer.id,
+      date: dateKey(iso),
+      time: isoToTimeInput(iso),
+      minMs: bound.minMs,
+      maxMs: bound.maxMs,
+      anchor: rectToAnchor(btn.getBoundingClientRect()),
+    })
   }
 
   const closeSheet = () => setSheet({ type: 'closed' })
