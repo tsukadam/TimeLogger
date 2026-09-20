@@ -191,22 +191,27 @@ function EventEditForm(props: EventEditFormProps) {
       return startMsSafe + 1000
     }
   })()
-  const startBound = boundsForStart({
-    events,
-    excludeId: eventId,
-    startMs: startMsSafe,
-    endMs: endMsSafe,
-    nowMs: Date.now(),
-  })
-  const endBound = boundsForEnd({
-    events,
-    excludeId: eventId,
-    startMs: startMsSafe,
-    endMs: endMsSafe ?? startMsSafe + 1000,
-    nowMs: Date.now(),
-  })
-  const startDays = boundDayRange(startBound)
-  const endDays = boundDayRange(endBound)
+  // 追加はスキマを初期値にするだけ。ホイールは無限軌道（bound 無し）
+  const startBound = isAdd
+    ? undefined
+    : boundsForStart({
+        events,
+        excludeId: eventId,
+        startMs: startMsSafe,
+        endMs: endMsSafe,
+        nowMs: Date.now(),
+      })
+  const endBound = isAdd
+    ? undefined
+    : boundsForEnd({
+        events,
+        excludeId: eventId,
+        startMs: startMsSafe,
+        endMs: endMsSafe ?? startMsSafe + 1000,
+        nowMs: Date.now(),
+      })
+  const startDays = startBound ? boundDayRange(startBound) : null
+  const endDays = endBound ? boundDayRange(endBound) : null
   const taskMissing =
     !isAdd &&
     formTaskId !== '' &&
@@ -307,10 +312,11 @@ function EventEditForm(props: EventEditFormProps) {
             value={formStartDate}
             disabled={busy}
             hideChevron
-            minDay={startDays.minDay}
-            maxDay={startDays.maxDay}
+            minDay={startDays?.minDay}
+            maxDay={startDays?.maxDay}
             onChange={(d) => {
               setFormStartDate(d)
+              if (!startBound) return
               const next = clampTimeOnDate(d, formStartTime, startBound)
               if (next) setFormStartTime(next)
             }}
@@ -339,10 +345,11 @@ function EventEditForm(props: EventEditFormProps) {
               value={formEndDate}
               disabled={busy}
               hideChevron
-              minDay={endDays.minDay}
-              maxDay={endDays.maxDay}
+              minDay={endDays?.minDay}
+              maxDay={endDays?.maxDay}
               onChange={(d) => {
                 setFormEndDate(d)
+                if (!endBound) return
                 const next = clampTimeOnDate(d, formEndTime, endBound)
                 if (next) setFormEndTime(next)
               }}
