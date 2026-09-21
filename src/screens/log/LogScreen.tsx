@@ -9,6 +9,7 @@ import {
   durationLabel,
   formatDurationHms,
   formatEventRange,
+  alignDayKey,
   todayKey,
   ymParts,
 } from '../../lib/time'
@@ -36,6 +37,7 @@ export function LogScreen() {
   const { clearError, saveLogPrefs, ensureEventsForRange } = useStoreActions()
 
   const today = todayKey()
+  const alignDay = alignDayKey()
   const ty = ymParts(today).y
 
   const [prefs, setPrefs] = useState<LogPrefs>(() => makeDefaultPrefs())
@@ -71,7 +73,7 @@ export function LogScreen() {
   useEffect(() => {
     if (loading) return
     const restored = normalizePrefs(logPrefs) ?? makeDefaultPrefs()
-    const next = alignOpenPeriod(restored, restored.kind, todayKey())
+    const next = alignOpenPeriod(restored, restored.kind, alignDayKey())
     setPrefs(next)
     setPrefsReady(true)
     if (next !== restored) {
@@ -143,7 +145,7 @@ export function LogScreen() {
   }
 
   const setKind = (kind: LogKind) => {
-    const next = alignOpenPeriod({ ...prefs, kind }, kind, today)
+    const next = alignOpenPeriod({ ...prefs, kind }, kind, alignDay)
     void persist(next)
     setDetailOpen(false)
   }

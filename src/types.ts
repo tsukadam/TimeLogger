@@ -78,8 +78,9 @@ export type LogPrefs = {
   /** Custom サマリーの粒度 */
   customGrain: 'day' | 'week' | 'month'
   /**
-   * Day/Week/Month/Year を「その暦日に初めて開いた」日。
-   * 値が today と一致する種別は、手で変えた期間を維持する。
+   * Day/Week/Month/Year を「その区切り日に初めて開いた」日。
+   * 区切りは東京 5:00（0:00–4:59 は前日）。値が今の区切り日と一致する種別は、
+   * 手で変えた期間を維持する。
    */
   rangeAlignedOn?: Partial<Record<'day' | 'week' | 'month' | 'year', string>>
 }

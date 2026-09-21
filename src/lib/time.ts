@@ -182,6 +182,19 @@ export function addDaysKey(dayKey: string, days: number): string {
   return dateKey(nowIso(new Date(dayStartMs(dayKey) + days * DAY_MS)))
 }
 
+/**
+ * Log の「今日の初回」判定用の日付。
+ * 暦日の 0 時ではなく、東京 5:00 を境に一日とする（0:00–4:59 は前日）。
+ */
+export const ALIGN_DAY_HOUR = 5
+
+export function alignDayKey(now = new Date()): string {
+  const iso = nowIso(now)
+  const p = partsInTokyo(floorToSecond(iso))
+  const cal = `${p.year}-${pad2(p.month)}-${pad2(p.day)}`
+  return p.hour < ALIGN_DAY_HOUR ? addDaysKey(cal, -1) : cal
+}
+
 /** その日を含む週の月曜（東京） */
 export function mondayKeyOf(dayKey: string): string {
   const start = dayStartMs(dayKey)

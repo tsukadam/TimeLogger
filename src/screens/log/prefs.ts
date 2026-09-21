@@ -104,8 +104,8 @@ export function snapPeriodToToday(
 }
 
 /**
- * Day/Week/Month/Year をその暦日に初めて開いたときだけ、期間を「今」に合わせる。
- * 二度目以降（手で日付を変えたあとも）はそのまま。
+ * Day/Week/Month/Year をその区切り日に初めて開いたときだけ、期間を「今」に合わせる。
+ * 区切りは東京 5:00。二度目以降（手で日付を変えたあとも）はそのまま。
  */
 export function alignOpenPeriod(
   prefs: LogPrefs,
