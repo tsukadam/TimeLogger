@@ -14,7 +14,15 @@
  * GET  /api/index.php?resource=now
  *      記録中 1 本（なければ null）と、直前に閉じた 1 本 last、tasks の更新時刻
  * POST /api/index.php?resource=start
- *      Body: { taskId, at? } — 開いている記録を閉じ、同時刻に開始
+ *      Body: { taskId, at?, eventId? } — 開いている記録を閉じ、同時刻に開始。eventId は末尾 w
+ * POST /api/index.php?resource=signal-start
+ *      Body: { taskId, at, eventId? } — [at, いま) を上書きして at で開始（スナップ無し）
+ * POST /api/index.php?resource=cut-in
+ *      signal-start の別名
+ * POST /api/index.php?resource=signal-stop
+ *      Body: { eventId, at, resumeTaskId? } — 指定行を閉じ、任意で直前タスクを at から上書き開始
+ * POST /api/index.php?resource=merge-queue
+ *      Body: { ops: [{op:start|stop,...}] } — 本体とキューが触れる箇所だけマージ
  * POST /api/index.php?resource=stop
  *      Body: { at?, eventId? } — まだ開いている自分だけを閉じる。既に閉じていたら 409
  * POST /api/index.php?resource=update
@@ -74,7 +82,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 $dataDir = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'data';
 $commands = [
-    'now', 'start', 'stop', 'update', 'delete', 'add', 'join',
+    'now', 'start', 'signal-start', 'cut-in', 'signal-stop', 'merge-queue',
+    'stop', 'update', 'delete', 'add', 'join',
     'folder-save', 'folder-move', 'folder-delete',
     'task-save', 'task-reorder', 'task-delete',
 ];

@@ -2,7 +2,8 @@
 /**
  * Wear / PWA 共用コマンド。
  * GET  now
- * POST start|stop|update|delete|add|join            記録
+ * POST start|signal-start|signal-stop|merge-queue|cut-in|stop|update|delete|add|join  記録
+ * cut-in は signal-start の別名
  * POST folder-save|folder-move|folder-delete        フォルダ
  * POST task-save|task-reorder|task-delete           タスク
  */
@@ -560,6 +561,35 @@ function requireStringId(mixed $value, string $field): string
     return $value;
 }
 
+/** ウォッチ採番。末尾 w。本丸が振る id には付けない */
+function requireWatchEventId(mixed $value): string
+{
+    $id = requireStringId($value, 'eventId');
+    if (!str_ends_with($id, 'w')) {
+        fail(400, 'eventId が不正です');
+    }
+    return $id;
+}
+
+function requireAtIso(mixed $value): DateTimeImmutable
+{
+    if ($value === null || $value === '') {
+        fail(400, 'at required');
+    }
+    if (!is_string($value)) {
+        fail(400, '時刻が不正です');
+    }
+    return parseCommandAt($value);
+}
+
+function optionalWatchEventId(array $body): ?string
+{
+    if (!array_key_exists('eventId', $body) || $body['eventId'] === null || $body['eventId'] === '') {
+        return null;
+    }
+    return requireWatchEventId($body['eventId']);
+}
+
 /** @param array<string, mixed> $ev */
 function eventStartMs(array $ev): int
 {
@@ -899,6 +929,260 @@ function handleNow(string $dataDir): void
     ]);
 }
 
+/**
+ * 開いている記録を 1 本作る（start / signal-start 共通）。
+ * @param array<string, mixed> $task
+ * @param array<string, mixed> $folder
+ * @return array<string, mixed>
+ */
+function makeOpenEvent(
+    array $task,
+    array $folder,
+    string $startedAt,
+    string $stamp,
+    ?string $id = null,
+): array {
+    return [
+        'id' => $id ?? newUuid(),
+        'taskId' => $task['id'],
+        'folderId' => $folder['id'],
+        'taskName' => $task['name'],
+        'folderName' => $folder['name'],
+        'taskColor' => $task['color'],
+        'folderColor' => $folder['color'],
+        'startedAt' => $startedAt,
+        'endedAt' => null,
+        'createdAt' => $stamp,
+        'updatedAt' => $stamp,
+    ];
+}
+
+/**
+ * 後発開始の上書き決定。HTTP ではない。
+ *
+ * until があるときだけ、終了済みで [at, until) に丸ごと入る行を捨てる。
+ * 終了済みのまたぎ切りは until の有無に関わらず行う（接点で後発が勝つ）。
+ * merge-queue は until を渡さないので、12:00–15:00 が 13:00–14:00 を消さない。
+ *
+ * @param list<array<string, mixed>> $events
+ * @return array{discard: list<string>, end: list<string>}
+ */
+function planOverwrite(
+    array $events,
+    int $atMs,
+    ?int $untilMs,
+    int $nowMs,
+    ?string $protectId = null,
+): array {
+    $discard = [];
+    $end = [];
+    foreach ($events as $ev) {
+        $id = $ev['id'] ?? null;
+        if (!is_string($id) || $id === '') {
+            continue;
+        }
+        if ($protectId !== null && $id === $protectId) {
+            continue;
+        }
+        $startMs = eventStartMs($ev);
+        $open = ($ev['endedAt'] ?? null) === null;
+        $endMs = $open ? $nowMs : eventEndMsOf($ev, $nowMs);
+
+        if ($open) {
+            if ($startMs >= $atMs || $startMs <= 0 || ($atMs - $startMs) < COMMAND_MIN_RECORD_MS) {
+                $discard[] = $id;
+                continue;
+            }
+            $end[] = $id;
+            continue;
+        }
+
+        if ($endMs <= $atMs) {
+            continue;
+        }
+        if ($untilMs !== null && $startMs >= $atMs && $endMs <= $untilMs) {
+            $discard[] = $id;
+            continue;
+        }
+        if ($startMs < $atMs && $endMs > $atMs) {
+            if (($atMs - $startMs) < COMMAND_MIN_RECORD_MS) {
+                $discard[] = $id;
+            } else {
+                $end[] = $id;
+            }
+        }
+    }
+    return ['discard' => $discard, 'end' => $end];
+}
+
+/**
+ * planOverwrite を行配列へ適用する。
+ *
+ * @param list<array<string, mixed>> $events
+ * @return array{events: list<array<string, mixed>>, cut: list<array{eventId: string, at: string}>}
+ */
+function applyOverwrite(
+    array $events,
+    int $atMs,
+    string $atIso,
+    ?int $untilMs,
+    int $nowMs,
+    string $stamp,
+    ?string $protectId = null,
+): array {
+    $plan = planOverwrite($events, $atMs, $untilMs, $nowMs, $protectId);
+    $discard = array_flip($plan['discard']);
+    $end = array_flip($plan['end']);
+    $cut = [];
+    $out = [];
+    foreach ($events as $ev) {
+        $id = $ev['id'] ?? null;
+        if (!is_string($id) || isset($discard[$id])) {
+            continue;
+        }
+        if (isset($end[$id])) {
+            $oldEnd = $ev['endedAt'] ?? null;
+            if (is_string($oldEnd) && $oldEnd !== '') {
+                $cut[] = ['eventId' => $id, 'at' => $oldEnd];
+            }
+            $ev['endedAt'] = $atIso;
+            $ev['updatedAt'] = $stamp;
+        }
+        $out[] = $ev;
+    }
+    return ['events' => $out, 'cut' => $cut];
+}
+
+/**
+ * @param array<string, array{events: list<array<string, mixed>>, updatedAt: string}> $oldChunks
+ * @param list<array<string, mixed>> $events
+ * @return array<string, array{events: list<array<string, mixed>>, updatedAt: string}>
+ */
+function chunksFromEvents(array $oldChunks, array $events, string $stamp): array
+{
+    $byQ = [];
+    foreach ($events as $ev) {
+        $q = quarterIdFromIso((string) ($ev['startedAt'] ?? ''));
+        $byQ[$q][] = $ev;
+    }
+    $dirty = [];
+    $qs = array_unique(array_merge(array_keys($oldChunks), array_keys($byQ)));
+    foreach ($qs as $q) {
+        $newList = array_values($byQ[$q] ?? []);
+        $oldList = $oldChunks[$q]['events'] ?? [];
+        if (eventsSignature($oldList) !== eventsSignature($newList)) {
+            $dirty[$q] = ['events' => $newList, 'updatedAt' => $stamp];
+        }
+    }
+    return $dirty;
+}
+
+/** @param list<array<string, mixed>> $events */
+function eventsSignature(array $events): string
+{
+    $rows = [];
+    foreach ($events as $ev) {
+        $end = $ev['endedAt'] ?? '';
+        $rows[] = ($ev['id'] ?? '') . "\t" . ($ev['startedAt'] ?? '') . "\t"
+            . (is_string($end) ? $end : '') . "\t" . ($ev['taskId'] ?? '');
+    }
+    sort($rows);
+    return implode("\n", $rows);
+}
+
+/**
+ * @param list<array<string, mixed>> $events
+ * @param array<string, mixed> $task
+ * @param array<string, mixed> $folder
+ * @return array{events: list<array<string, mixed>>, cut: list<array{eventId: string, at: string}>}
+ */
+function overwriteStart(
+    array $events,
+    array $task,
+    array $folder,
+    int $atMs,
+    string $atIso,
+    ?int $untilMs,
+    int $nowMs,
+    string $stamp,
+    ?string $eventId,
+): array {
+    if ($eventId !== null) {
+        foreach ($events as $ev) {
+            if (($ev['id'] ?? null) === $eventId) {
+                fail(400, 'eventId が重複しています');
+            }
+        }
+    }
+    $applied = applyOverwrite($events, $atMs, $atIso, $untilMs, $nowMs, $stamp);
+    $started = makeOpenEvent($task, $folder, $atIso, $stamp, $eventId);
+    $applied['events'][] = $started;
+    return $applied;
+}
+
+/**
+ * @param array<string, array{events: list<array<string, mixed>>, updatedAt: string}> $chunks
+ * @param list<array<string, mixed>> $events
+ */
+function persistEventList(string $dataDir, array $index, array $chunks, array $events, string $stamp): array
+{
+    $dirty = chunksFromEvents($chunks, $events, $stamp);
+    if ($dirty === []) {
+        return ['index' => $index, 'chunks' => []];
+    }
+    return persistCommandWrites($dataDir, $index, $dirty, $stamp);
+}
+
+/**
+ * @param list<array<string, mixed>> $events
+ * @return array{ok: 'applied'|'skipped'|'missing', events: list<array<string, mixed>>}
+ */
+function applyStopToEvents(array $events, string $eventId, int $atMs, string $atIso, string $stamp): array
+{
+    $found = false;
+    $out = [];
+    foreach ($events as $ev) {
+        if (($ev['id'] ?? null) !== $eventId) {
+            $out[] = $ev;
+            continue;
+        }
+        $found = true;
+        if (($ev['endedAt'] ?? null) !== null) {
+            return ['ok' => 'skipped', 'events' => $events];
+        }
+        $startMs = eventStartMs($ev);
+        if ($startMs <= 0 || ($atMs - $startMs) < COMMAND_MIN_RECORD_MS) {
+            continue;
+        }
+        $ev['endedAt'] = $atIso;
+        $ev['updatedAt'] = $stamp;
+        $out[] = $ev;
+    }
+    if (!$found) {
+        return ['ok' => 'missing', 'events' => $events];
+    }
+    return ['ok' => 'applied', 'events' => $out];
+}
+
+/** @param array<string, mixed> $ev */
+function eventCoversAt(array $ev, int $atMs, int $nowMs): bool
+{
+    return eventStartMs($ev) < $atMs && eventEndMsOf($ev, $nowMs) > $atMs;
+}
+
+/**
+ * @param list<array<string, mixed>> $events
+ */
+function eventsContainId(array $events, string $id): bool
+{
+    foreach ($events as $ev) {
+        if (($ev['id'] ?? null) === $id) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function handleStart(string $dataDir): void
 {
     $raw = file_get_contents('php://input');
@@ -913,6 +1197,7 @@ function handleStart(string $dataDir): void
     if (!is_string($taskId) || $taskId === '') {
         fail(400, 'taskId required');
     }
+    $eventId = optionalWatchEventId($body);
     $at = parseCommandAt($body['at'] ?? null);
     $endMs = commandMs($at);
     $stamp = commandIso($at);
@@ -922,6 +1207,9 @@ function handleStart(string $dataDir): void
 
     $index = loadEventsIndex($dataDir);
     $chunks = loadChunks($dataDir, $index['chunks'], $stamp);
+    if ($eventId !== null && eventsContainId(allEvents($chunks), $eventId)) {
+        fail(400, 'eventId が重複しています');
+    }
     $dirty = closeOpenAcrossChunks($chunks, $endMs, $stamp, null);
     $overlay = mergeOverlay($chunks, $dirty);
 
@@ -958,19 +1246,7 @@ function handleStart(string $dataDir): void
         }
     }
 
-    $started = [
-        'id' => newUuid(),
-        'taskId' => $task['id'],
-        'folderId' => $folder['id'],
-        'taskName' => $task['name'],
-        'folderName' => $folder['name'],
-        'taskColor' => $task['color'],
-        'folderColor' => $folder['color'],
-        'startedAt' => $startIso,
-        'endedAt' => null,
-        'createdAt' => $stamp,
-        'updatedAt' => $stamp,
-    ];
+    $started = makeOpenEvent($task, $folder, $startIso, $stamp, $eventId);
     $qid = quarterIdFromIso($startIso);
     $base = $overlay[$qid]['events'] ?? [];
     $base[] = $started;
@@ -978,6 +1254,354 @@ function handleStart(string $dataDir): void
 
     $written = persistCommandWrites($dataDir, $index, $dirty, $stamp);
     echoCommandWrite($tasks, $index, $chunks, $written);
+}
+
+function handleSignalStart(string $dataDir): void
+{
+    $body = readJsonBody(true);
+    $taskId = requireStringId($body['taskId'] ?? null, 'taskId');
+    $at = requireAtIso($body['at'] ?? null);
+    $eventId = optionalWatchEventId($body);
+    $atMs = commandMs($at);
+    $atIso = commandIso($at);
+    $now = commandNow();
+    $nowMs = commandMs($now);
+    $stamp = commandIso($now);
+
+    $tasks = loadTasksFile($dataDir);
+    [$task, $folder] = findTaskAndFolder($tasks, $taskId);
+
+    $index = loadEventsIndex($dataDir);
+    $chunks = loadChunks($dataDir, $index['chunks'], $stamp);
+    $applied = overwriteStart(
+        allEvents($chunks),
+        $task,
+        $folder,
+        $atMs,
+        $atIso,
+        $nowMs,
+        $nowMs,
+        $stamp,
+        $eventId,
+    );
+    $written = persistEventList($dataDir, $index, $chunks, $applied['events'], $stamp);
+    echoCommandWrite($tasks, $index, $chunks, $written);
+}
+
+function handleSignalStop(string $dataDir): void
+{
+    $body = readJsonBody(true);
+    $eventId = requireStringId($body['eventId'] ?? null, 'eventId');
+    $at = requireAtIso($body['at'] ?? null);
+    $resumeTaskId = $body['resumeTaskId'] ?? null;
+    if ($resumeTaskId !== null && $resumeTaskId !== '' && !is_string($resumeTaskId)) {
+        fail(400, 'resumeTaskId が不正です');
+    }
+    if (!is_string($resumeTaskId) || $resumeTaskId === '') {
+        $resumeTaskId = null;
+    }
+    $atMs = commandMs($at);
+    $atIso = commandIso($at);
+    $now = commandNow();
+    $nowMs = commandMs($now);
+    $stamp = commandIso($now);
+
+    $tasks = loadTasksFile($dataDir);
+    $index = loadEventsIndex($dataDir);
+    $chunks = loadChunks($dataDir, $index['chunks'], $stamp);
+    $events = allEvents($chunks);
+
+    $closed = applyStopToEvents($events, $eventId, $atMs, $atIso, $stamp);
+    if ($closed['ok'] === 'missing') {
+        fail(404, '記録が見つかりません');
+    }
+    if ($closed['ok'] === 'skipped') {
+        fail(409, '既に終了しています');
+    }
+    $events = $closed['events'];
+
+    if ($resumeTaskId !== null) {
+        [$task, $folder] = findTaskAndFolder($tasks, $resumeTaskId);
+        $events = overwriteStart(
+            $events,
+            $task,
+            $folder,
+            $atMs,
+            $atIso,
+            $nowMs,
+            $nowMs,
+            $stamp,
+            null,
+        )['events'];
+    }
+
+    $written = persistEventList($dataDir, $index, $chunks, $events, $stamp);
+    echoCommandWrite($tasks, $index, $chunks, $written);
+}
+
+/**
+ * キュー ops を一本線の区間にする。内部は流し直さない。
+ *
+ * @param list<mixed> $ops
+ * @param list<array<string, mixed>> $events
+ * @return list<array{
+ *   source: string,
+ *   eventId: string,
+ *   taskId: string,
+ *   startMs: int,
+ *   startIso: string,
+ *   endMs: int,
+ *   endIso: ?string,
+ *   open: bool
+ * }>
+ */
+function queueOpsToSegments(array $ops, array $events, int $nowMs): array
+{
+    $openId = null;
+    $startIds = [];
+    $segs = [];
+    $byId = [];
+
+    foreach ($ops as $op) {
+        if (!is_array($op)) {
+            fail(400, 'ops が不正です');
+        }
+        $kind = $op['op'] ?? null;
+        if ($kind !== 'start' && $kind !== 'stop') {
+            fail(400, 'op が不正です');
+        }
+        $at = requireAtIso($op['at'] ?? null);
+        $ms = commandMs($at);
+        $iso = commandIso($at);
+        if ($kind === 'start') {
+            $taskId = requireStringId($op['taskId'] ?? null, 'taskId');
+            $eventId = requireWatchEventId($op['eventId'] ?? null);
+            if (isset($startIds[$eventId]) || eventsContainId($events, $eventId)) {
+                fail(400, 'eventId が重複しています');
+            }
+            if ($openId !== null) {
+                fail(400, 'ops が一本線ではありません');
+            }
+            $startIds[$eventId] = true;
+            $openId = $eventId;
+            $byId[$eventId] = [
+                'source' => 'queue',
+                'eventId' => $eventId,
+                'taskId' => $taskId,
+                'startMs' => $ms,
+                'startIso' => $iso,
+                'endMs' => $nowMs,
+                'endIso' => null,
+                'open' => true,
+            ];
+        } else {
+            $eventId = requireStringId($op['eventId'] ?? null, 'eventId');
+            if ($openId === $eventId && isset($byId[$eventId])) {
+                $byId[$eventId]['endMs'] = $ms;
+                $byId[$eventId]['endIso'] = $iso;
+                $byId[$eventId]['open'] = false;
+                $openId = null;
+            } elseif (!isset($startIds[$eventId]) && !eventsContainId($events, $eventId)) {
+                fail(404, '記録が見つかりません');
+            }
+        }
+    }
+
+    foreach ($byId as $seg) {
+        $segs[] = $seg;
+    }
+    usort($segs, static fn (array $a, array $b): int => $a['startMs'] <=> $b['startMs']);
+    for ($i = 1, $n = count($segs); $i < $n; $i++) {
+        if ($segs[$i - 1]['endMs'] > $segs[$i]['startMs']) {
+            fail(400, 'ops が一本線ではありません');
+        }
+    }
+    return $segs;
+}
+
+/**
+ * @param array<string, mixed> $ev
+ * @return array{
+ *   source: string,
+ *   eventId: string,
+ *   taskId: string,
+ *   startMs: int,
+ *   startIso: string,
+ *   endMs: int,
+ *   endIso: ?string,
+ *   open: bool,
+ *   event: array<string, mixed>
+ * }
+ */
+function canonEventToSegment(array $ev, int $nowMs): array
+{
+    $open = ($ev['endedAt'] ?? null) === null;
+    $endIso = is_string($ev['endedAt'] ?? null) ? $ev['endedAt'] : null;
+    return [
+        'source' => 'canon',
+        'eventId' => (string) ($ev['id'] ?? ''),
+        'taskId' => (string) ($ev['taskId'] ?? ''),
+        'startMs' => eventStartMs($ev),
+        'startIso' => (string) ($ev['startedAt'] ?? ''),
+        'endMs' => $open ? $nowMs : eventEndMsOf($ev, $nowMs),
+        'endIso' => $endIso,
+        'open' => $open,
+        'event' => $ev,
+    ];
+}
+
+/**
+ * 接点だけで後発開始が勝つ。負けた側の残りは穴（再開しない）。
+ * 同じ側の連続した区間は、そのまま載せる。
+ *
+ * @param list<array<string, mixed>> $canonSegs
+ * @param list<array<string, mixed>> $queueSegs
+ * @return array{pieces: list<array<string, mixed>>, skipped: list<array{eventId: string, at: string}>}
+ */
+function mergeLaterStartWins(array $canonSegs, array $queueSegs): array
+{
+    $all = array_merge($canonSegs, $queueSegs);
+    usort($all, static function (array $a, array $b): int {
+        if ($a['startMs'] !== $b['startMs']) {
+            return $a['startMs'] <=> $b['startMs'];
+        }
+        $ar = ($a['source'] ?? '') === 'queue' ? 1 : 0;
+        $br = ($b['source'] ?? '') === 'queue' ? 1 : 0;
+        return $ar <=> $br;
+    });
+
+    $pieces = [];
+    $skipped = [];
+    $winner = null;
+
+    $emit = static function (array $seg, int $fromMs, string $fromIso, int $toMs, ?string $toIso, bool $open) use (&$pieces): void {
+        if (!$open && $toMs - $fromMs < COMMAND_MIN_RECORD_MS) {
+            return;
+        }
+        $pieces[] = [
+            'seg' => $seg,
+            'startMs' => $fromMs,
+            'startIso' => $fromIso,
+            'endMs' => $toMs,
+            'endIso' => $open ? null : $toIso,
+            'open' => $open,
+        ];
+    };
+
+    $closeWinner = static function (int $atMs, string $atIso, bool $natural) use (&$winner, &$skipped, $emit): void {
+        if ($winner === null) {
+            return;
+        }
+        $w = $winner;
+        $winner = null;
+        if ($natural && $w['open']) {
+            $emit($w, $w['winFromMs'], $w['winFromIso'], $w['endMs'], null, true);
+            return;
+        }
+        $emit($w, $w['winFromMs'], $w['winFromIso'], $atMs, $atIso, false);
+        if (!$w['open'] && is_string($w['endIso'] ?? null) && $w['endMs'] > $atMs) {
+            $skipped[] = ['eventId' => $w['eventId'], 'at' => $w['endIso']];
+        }
+    };
+
+    foreach ($all as $seg) {
+        $t = $seg['startMs'];
+        $tIso = $seg['startIso'];
+        if ($winner !== null && $winner['endMs'] <= $t) {
+            $endIso = $winner['open'] ? $tIso : (string) ($winner['endIso'] ?? $tIso);
+            $closeWinner($winner['endMs'], $endIso, true);
+        }
+        if ($winner === null) {
+            $winner = $seg;
+            $winner['winFromMs'] = $seg['startMs'];
+            $winner['winFromIso'] = $seg['startIso'];
+            continue;
+        }
+        $later = $seg['startMs'] > $winner['startMs']
+            || ($seg['startMs'] === $winner['startMs'] && ($seg['source'] ?? '') === 'queue');
+        if ($later) {
+            $closeWinner($t, $tIso, false);
+            $winner = $seg;
+            $winner['winFromMs'] = $seg['startMs'];
+            $winner['winFromIso'] = $seg['startIso'];
+        } elseif (($seg['source'] ?? '') === 'queue' && !$seg['open'] && is_string($seg['endIso'] ?? null)) {
+            $skipped[] = ['eventId' => $seg['eventId'], 'at' => $seg['endIso']];
+        }
+    }
+    if ($winner !== null) {
+        $endIso = $winner['open'] ? ($winner['endIso'] ?? $winner['startIso']) : (string) ($winner['endIso'] ?? $winner['startIso']);
+        $closeWinner($winner['endMs'], $endIso, true);
+    }
+
+    return ['pieces' => $pieces, 'skipped' => $skipped];
+}
+
+function handleMergeQueue(string $dataDir): void
+{
+    $body = readJsonBody(true);
+    $ops = $body['ops'] ?? null;
+    if (!is_array($ops)) {
+        fail(400, 'ops required');
+    }
+    $n = count($ops);
+    if ($n < 1 || $n > 256) {
+        fail(400, 'ops の件数が不正です');
+    }
+
+    $now = commandNow();
+    $nowMs = commandMs($now);
+    $stamp = commandIso($now);
+
+    $tasks = loadTasksFile($dataDir);
+    $index = loadEventsIndex($dataDir);
+    $chunks = loadChunks($dataDir, $index['chunks'], $stamp);
+    $events = allEvents($chunks);
+    $queueSegs = queueOpsToSegments($ops, $events, $nowMs);
+
+    foreach ($queueSegs as $seg) {
+        findTaskAndFolder($tasks, $seg['taskId']);
+    }
+
+    $involved = [];
+    $kept = [];
+    foreach ($events as $ev) {
+        $cseg = canonEventToSegment($ev, $nowMs);
+        $hit = false;
+        foreach ($queueSegs as $q) {
+            if ($cseg['startMs'] < $q['endMs'] && $q['startMs'] < $cseg['endMs']) {
+                $hit = true;
+                break;
+            }
+        }
+        if ($hit) {
+            $involved[] = $cseg;
+        } else {
+            $kept[] = $ev;
+        }
+    }
+
+    $merged = mergeLaterStartWins($involved, $queueSegs);
+    $out = $kept;
+    foreach ($merged['pieces'] as $piece) {
+        $seg = $piece['seg'];
+        if (($seg['source'] ?? '') === 'canon') {
+            $ev = $seg['event'];
+            $ev['startedAt'] = $piece['startIso'];
+            $ev['endedAt'] = $piece['open'] ? null : $piece['endIso'];
+            $ev['updatedAt'] = $stamp;
+            $out[] = $ev;
+            continue;
+        }
+        [$task, $folder] = findTaskAndFolder($tasks, $seg['taskId']);
+        $ev = makeOpenEvent($task, $folder, $piece['startIso'], $stamp, $seg['eventId']);
+        if (!$piece['open']) {
+            $ev['endedAt'] = $piece['endIso'];
+        }
+        $out[] = $ev;
+    }
+
+    $written = persistEventList($dataDir, $index, $chunks, $out, $stamp);
+    echoCommandWrite($tasks, $index, $chunks, $written, ['skipped' => $merged['skipped']]);
 }
 
 function handleStop(string $dataDir): void
@@ -1651,6 +2275,10 @@ function handleCommand(string $dataDir, string $resource, string $method): void
 
     $writes = [
         'start' => 'handleStart',
+        'signal-start' => 'handleSignalStart',
+        'cut-in' => 'handleSignalStart',
+        'signal-stop' => 'handleSignalStop',
+        'merge-queue' => 'handleMergeQueue',
         'stop' => 'handleStop',
         'update' => 'handleUpdate',
         'delete' => 'handleDelete',

@@ -234,6 +234,7 @@ export type CommandWriteResult = {
   index: EventsIndex
   chunks: Record<string, EventsFile>
   boundary?: string
+  skipped?: { eventId: string; at: string }[]
 }
 
 async function readApiError(res: Response): Promise<string> {
@@ -279,6 +280,10 @@ export type TasksWriteResult = {
 
 type CommandResource =
   | 'start'
+  | 'signal-start'
+  | 'cut-in'
+  | 'signal-stop'
+  | 'merge-queue'
   | 'stop'
   | 'update'
   | 'delete'
@@ -318,8 +323,44 @@ async function postCommand<T = CommandWriteResult>(
 export function postStart(body: {
   taskId: string
   at?: string
+  eventId?: string
 }): Promise<CommandWriteResult> {
   return postCommand('start', body)
+}
+
+/** Health 開始。[at, いま) を上書きして at で開始。スナップ無し */
+export function postSignalStart(body: {
+  taskId: string
+  at: string
+  eventId?: string
+}): Promise<CommandWriteResult> {
+  return postCommand('signal-start', body)
+}
+
+/** @deprecated signal-start の別名 */
+export function postCutIn(body: {
+  taskId: string
+  at: string
+  eventId?: string
+}): Promise<CommandWriteResult> {
+  return postCommand('cut-in', body)
+}
+
+export function postSignalStop(body: {
+  eventId: string
+  at: string
+  resumeTaskId?: string
+}): Promise<CommandWriteResult> {
+  return postCommand('signal-stop', body)
+}
+
+export function postMergeQueue(body: {
+  ops: Array<
+    | { op: 'start'; taskId: string; at: string; eventId: string }
+    | { op: 'stop'; eventId: string; at: string }
+  >
+}): Promise<CommandWriteResult> {
+  return postCommand('merge-queue', body)
 }
 
 export function postStop(body?: {
