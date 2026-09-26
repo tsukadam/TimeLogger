@@ -47,6 +47,7 @@ function nearestCongruent(from: number, target: number, mod: number) {
  * 1桁ぶんのドラムロール（ポインター駆動・慣性つき・無限軌道）
  * - 回すと桁上げ/下げが総秒（さらには日付）へ伝播する
  * - ドラッグ中は見た目だけ動かし、離したときに確定・慣性
+ * - bound は隣で止まる版。Activity 編集からは外してあるが部品として残す
  */
 function WheelColumn({
   label,

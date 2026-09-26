@@ -25,6 +25,8 @@
  *      Body: { ops: [{op:start|stop,...}] } — 本体とキューが触れる箇所だけマージ
  * POST /api/index.php?resource=stop
  *      Body: { at?, eventId? } — まだ開いている自分だけを閉じる。既に閉じていたら 409
+ * POST /api/index.php?resource=overwrite
+ *      Body: { eventId, startedAt, endedAt, editedAt, taskId? } — 閉じた区間の完全上書き（スナップ無し）
  * POST /api/index.php?resource=update
  *      Body: { eventId, taskId?, startedAt?, endedAt? } — 1 件の手編集
  * POST /api/index.php?resource=delete
@@ -83,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 $dataDir = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'data';
 $commands = [
     'now', 'start', 'signal-start', 'cut-in', 'signal-stop', 'merge-queue',
-    'stop', 'update', 'delete', 'add', 'join',
+    'stop', 'overwrite', 'update', 'delete', 'add', 'join',
     'folder-save', 'folder-move', 'folder-delete',
     'task-save', 'task-reorder', 'task-delete',
 ];

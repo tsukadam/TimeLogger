@@ -170,7 +170,7 @@ export function clipBoundWindow(
   return { minMs, maxMs }
 }
 
-/** 開始時刻ホイールの合法範囲。前の記録の終了（端点一致は可）より前へは出ない */
+/** 開始時刻ホイールの合法範囲。隣で止まる版。Activity からは外してあるが部品として残す。 */
 export function boundsForStart(opts: {
   events: Event[]
   excludeId: string | null

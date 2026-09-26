@@ -285,6 +285,7 @@ type CommandResource =
   | 'signal-stop'
   | 'merge-queue'
   | 'stop'
+  | 'overwrite'
   | 'update'
   | 'delete'
   | 'add'
@@ -368,6 +369,17 @@ export function postStop(body?: {
   eventId?: string
 }): Promise<CommandWriteResult> {
   return postCommand('stop', body ?? {})
+}
+
+/** ウォッチおよび本体 Activity の時刻編集。隙間2分は中点、重なりは塗る。 */
+export function postOverwrite(body: {
+  eventId: string
+  startedAt: string
+  endedAt: string
+  editedAt: string
+  taskId?: string
+}): Promise<CommandWriteResult> {
+  return postCommand('overwrite', body)
 }
 
 export function postUpdate(body: {

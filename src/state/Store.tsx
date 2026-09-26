@@ -11,12 +11,12 @@ import {
 import {
   fetchResource,
   isOnline,
-  postAdd,
   postDelete,
   postFolderDelete,
   postFolderMove,
   postFolderSave,
   postJoin,
+  postOverwrite,
   postStart,
   postStop,
   postTaskDelete,
@@ -407,11 +407,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
     ) => {
       await runWrite(async () => {
-        const result = await postUpdate({
+        if (patch.endedAt === null) {
+          const result = await postUpdate({
+            eventId,
+            taskId: patch.taskId,
+            startedAt: patch.startedAt,
+            endedAt: null,
+          })
+          applyCommandResult(result)
+          return
+        }
+        const result = await postOverwrite({
           eventId,
           taskId: patch.taskId,
           startedAt: patch.startedAt,
           endedAt: patch.endedAt,
+          editedAt: nowIso(),
         })
         applyCommandResult(result)
       })
@@ -422,7 +433,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const addEvent = useCallback(
     async (patch: { taskId: string; startedAt: string; endedAt: string }) => {
       await runWrite(async () => {
-        const result = await postAdd(patch)
+        const result = await postOverwrite({
+          eventId: crypto.randomUUID(),
+          taskId: patch.taskId,
+          startedAt: patch.startedAt,
+          endedAt: patch.endedAt,
+          editedAt: nowIso(),
+        })
         applyCommandResult(result)
       })
     },

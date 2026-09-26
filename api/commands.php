@@ -2,7 +2,7 @@
 /**
  * Wear / PWA 共用コマンド。
  * GET  now
- * POST start|signal-start|signal-stop|merge-queue|cut-in|stop|update|delete|add|join  記録
+ * POST start|signal-start|signal-stop|merge-queue|cut-in|stop|overwrite|update|delete|add|join  記録
  * cut-in は signal-start の別名
  * POST folder-save|folder-move|folder-delete        フォルダ
  * POST task-save|task-reorder|task-delete           タスク
@@ -52,9 +52,14 @@ function commandMs(DateTimeImmutable $dt): int
 
 function commandMsFromIso(string $iso): int
 {
+    if (trim($iso) === '') {
+        return 0;
+    }
     try {
         return commandMs(new DateTimeImmutable($iso));
     } catch (Exception $e) {
+        return 0;
+    } catch (Throwable $e) {
         return 0;
     }
 }
@@ -496,7 +501,7 @@ function persistCommandWrites(string $dataDir, array $index, array $dirtyChunks,
     if ($index['current'] !== $cur) {
         $changedIndex = true;
     }
-    if ($changedIndex) {
+    if ($changedIndex || $dirtyChunks !== []) {
         $index = [
             'chunks' => sortQuarterIds($chunksList),
             'current' => $cur,
@@ -732,8 +737,15 @@ function assertDuration(int $startMs, int $endMs, string $label): void
  * @param list<array<string, mixed>> $events
  * @return array{startMs: int, endMs: int|null, patches: list<array<string, mixed>>}
  */
-function snapEventTimes(array $events, ?string $excludeId, int $startMs, ?int $endMs, int $nowMs, string $move): array
-{
+function snapEventTimes(
+    array $events,
+    ?string $excludeId,
+    int $startMs,
+    ?int $endMs,
+    int $nowMs,
+    string $move,
+    bool $gapsOnly = false,
+): array {
     $patches = [];
     $duration = $endMs !== null ? $endMs - $startMs : PHP_INT_MAX;
     $short = $duration <= COMMAND_SNAP_MS;
@@ -745,7 +757,8 @@ function snapEventTimes(array $events, ?string $excludeId, int $startMs, ?int $e
         $prevEnd = eventEndMsOf($prev, $nowMs);
         $overlap = $startMs < $prevEnd;
         $gap = $startMs > $prevEnd;
-        $should = abs($prevEnd - $startMs) <= COMMAND_SNAP_MS && ($overlap || ($gap && $snapStart));
+        $should = abs($prevEnd - $startMs) <= COMMAND_SNAP_MS
+            && ($gapsOnly ? $gap : ($overlap || ($gap && $snapStart)));
         if ($should) {
             $mid = (int) round(($prevEnd + $startMs) / 2);
             $startMs = $mid;
@@ -758,7 +771,8 @@ function snapEventTimes(array $events, ?string $excludeId, int $startMs, ?int $e
         $nextStart = eventStartMs($next);
         $overlap = $endMs > $nextStart;
         $gap = $endMs < $nextStart;
-        $should = abs($endMs - $nextStart) <= COMMAND_SNAP_MS && ($overlap || ($gap && $snapEnd));
+        $should = abs($endMs - $nextStart) <= COMMAND_SNAP_MS
+            && ($gapsOnly ? $gap : ($overlap || ($gap && $snapEnd)));
         if ($should) {
             $mid = (int) round(($endMs + $nextStart) / 2);
             $endMs = $mid;
@@ -777,8 +791,41 @@ function snapEventTimes(array $events, ?string $excludeId, int $startMs, ?int $e
 
 /**
  * @param list<array<string, mixed>> $events
+ * @param list<array<string, mixed>> $patches
+ * @return list<array<string, mixed>>
  */
-function validateEventRange(array $events, int $startMs, int $endMs, ?string $excludeId, int $nowMs, bool $validateEndBound): void
+function applyTimePatches(array $events, array $patches): array
+{
+    if ($patches === []) {
+        return $events;
+    }
+    $byId = [];
+    foreach ($patches as $p) {
+        $id = $p['id'] ?? null;
+        if (is_string($id)) {
+            $byId[$id] = $p;
+        }
+    }
+    foreach ($events as $i => $ev) {
+        $id = $ev['id'] ?? null;
+        if (!is_string($id) || !isset($byId[$id])) {
+            continue;
+        }
+        $p = $byId[$id];
+        if (isset($p['endedAt'])) {
+            $events[$i]['endedAt'] = $p['endedAt'];
+        }
+        if (isset($p['startedAt'])) {
+            $events[$i]['startedAt'] = $p['startedAt'];
+        }
+    }
+    return $events;
+}
+
+/**
+ * @param list<array<string, mixed>> $events
+ */
+function assertEventTimeBounds(int $startMs, int $endMs, int $nowMs, bool $validateEndBound): void
 {
     if ($startMs <= 0) {
         fail(400, '開始時刻が不正です');
@@ -800,6 +847,11 @@ function validateEventRange(array $events, int $startMs, int $endMs, ?string $ex
     ) {
         fail(400, '未来の時間には記録を作れません');
     }
+}
+
+function validateEventRange(array $events, int $startMs, int $endMs, ?string $excludeId, int $nowMs, bool $validateEndBound): void
+{
+    assertEventTimeBounds($startMs, $endMs, $nowMs, $validateEndBound);
     $hit = findOverlap($events, $startMs, $endMs, $excludeId, $nowMs);
     if ($hit !== null) {
         failOverlap($hit);
@@ -1674,6 +1726,247 @@ function handleStop(string $dataDir): void
     echoCommandWrite($tasks, $index, $chunks, $written);
 }
 
+/**
+ * 手編集の完全上書き。対象以外を [ns, ne) で切る／捨てる／分割する。
+ *
+ * @param array<string, mixed> $ev
+ * @return list<array<string, mixed>>
+ */
+function clipEventForOverwrite(
+    array $ev,
+    int $ns,
+    int $ne,
+    string $nsIso,
+    string $neIso,
+    int $nowMs,
+    string $stamp,
+): array {
+    $es = eventStartMs($ev);
+    $open = ($ev['endedAt'] ?? null) === null;
+    $ee = $open ? $nowMs : eventEndMsOf($ev, $nowMs);
+
+    if ($ee <= $ns || $es >= $ne) {
+        return [$ev];
+    }
+    if ($es >= $ns && $ee <= $ne) {
+        return [];
+    }
+
+    $rows = [];
+    $leftKept = false;
+    if ($es < $ns && ($ns - $es) >= COMMAND_MIN_RECORD_MS) {
+        $left = $ev;
+        $left['endedAt'] = $nsIso;
+        $left['updatedAt'] = $stamp;
+        $rows[] = $left;
+        $leftKept = true;
+    }
+    if ($ee > $ne && ($ee - $ne) >= COMMAND_MIN_RECORD_MS) {
+        $right = $ev;
+        if ($leftKept) {
+            $right['id'] = newUuid();
+            $right['createdAt'] = $stamp;
+        }
+        $right['startedAt'] = $neIso;
+        $right['updatedAt'] = $stamp;
+        if ($open) {
+            $right['endedAt'] = null;
+        }
+        $rows[] = $right;
+    }
+    return $rows;
+}
+
+/**
+ * @param list<array<string, mixed>> $events
+ * @return list<array<string, mixed>>
+ */
+function clipOthersForOverwrite(
+    array $events,
+    string $excludeId,
+    int $ns,
+    int $ne,
+    string $nsIso,
+    string $neIso,
+    int $nowMs,
+    string $stamp,
+): array {
+    $next = [];
+    foreach ($events as $ev) {
+        if (($ev['id'] ?? null) === $excludeId) {
+            continue;
+        }
+        foreach (clipEventForOverwrite($ev, $ns, $ne, $nsIso, $neIso, $nowMs, $stamp) as $row) {
+            $next[] = $row;
+        }
+    }
+    return $next;
+}
+
+function commandDebugLog(string $dataDir, string $message, array $detail = []): void
+{
+    $path = $dataDir . DIRECTORY_SEPARATOR . 'debug.log';
+    $entry = json_encode([
+        'at' => commandIso(commandNow()),
+        'level' => 'info',
+        'message' => $message,
+        'detail' => $detail,
+        'ua' => $_SERVER['HTTP_USER_AGENT'] ?? '',
+    ], JSON_UNESCAPED_UNICODE);
+    if ($entry === false) {
+        return;
+    }
+    $lockPath = $path . '.lock';
+    $lf = @fopen($lockPath, 'c+');
+    if ($lf !== false) {
+        flock($lf, LOCK_EX);
+    }
+    @file_put_contents($path, $entry . "\n", FILE_APPEND);
+    if ($lf !== false) {
+        flock($lf, LOCK_UN);
+        fclose($lf);
+    }
+}
+
+function handleOverwrite(string $dataDir): void
+{
+    $body = readJsonBody(true);
+    $eventId = requireStringId($body['eventId'] ?? null, 'eventId');
+    commandDebugLog($dataDir, 'overwrite start', ['eventId' => $eventId]);
+    if (!array_key_exists('endedAt', $body) || $body['endedAt'] === null || $body['endedAt'] === '') {
+        fail(400, 'endedAt required');
+    }
+    if (!is_string($body['startedAt'] ?? null) || !is_string($body['endedAt']) || !is_string($body['editedAt'] ?? null)) {
+        fail(400, '時刻が不正です');
+    }
+    $startedAtKeep = $body['startedAt'];
+    $endedAtKeep = $body['endedAt'];
+    $editedAtKeep = $body['editedAt'];
+    $startDt = parseCommandAt($startedAtKeep);
+    $endDt = parseCommandAt($endedAtKeep);
+    try {
+        $editedDt = new DateTimeImmutable($editedAtKeep);
+    } catch (Exception $e) {
+        fail(400, '時刻が不正です');
+    }
+    $ns = commandMs($startDt);
+    $ne = commandMs($endDt);
+    if ($ne <= $ns) {
+        fail(400, '終了は開始より後にしてください');
+    }
+    if ($ne - $ns < COMMAND_MIN_RECORD_MS) {
+        fail(400, '1秒未満の記録にはできません');
+    }
+
+    $taskIdIn = $body['taskId'] ?? null;
+    if ($taskIdIn !== null && $taskIdIn !== '' && !is_string($taskIdIn)) {
+        fail(400, 'taskId が不正です');
+    }
+    if (!is_string($taskIdIn) || $taskIdIn === '') {
+        $taskIdIn = null;
+    }
+
+    $now = commandNow();
+    $nowMs = commandMs($now);
+    $fileStamp = commandIso($now);
+
+    $tasks = loadTasksFile($dataDir);
+    $index = loadEventsIndex($dataDir);
+    $chunks = loadChunks($dataDir, $index['chunks'], $fileStamp);
+    $events = allEvents($chunks);
+    $task = null;
+    $folder = null;
+    if ($taskIdIn !== null) {
+        [$task, $folder] = findTaskAndFolder($tasks, $taskIdIn);
+    }
+
+    $prev = null;
+    foreach ($events as $ev) {
+        if (($ev['id'] ?? null) === $eventId) {
+            $prev = $ev;
+            break;
+        }
+    }
+    if ($prev === null) {
+        if ($task === null || $folder === null) {
+            commandDebugLog($dataDir, 'overwrite 404', ['eventId' => $eventId]);
+            fail(400, 'taskId が不正です');
+        }
+        $prev = [
+            'id' => $eventId,
+            'taskId' => $task['id'],
+            'folderId' => $folder['id'],
+            'taskName' => $task['name'],
+            'folderName' => $folder['name'],
+            'taskColor' => $task['color'],
+            'folderColor' => $folder['color'],
+            'startedAt' => $startedAtKeep,
+            'endedAt' => $endedAtKeep,
+            'createdAt' => $editedAtKeep,
+            'updatedAt' => $editedAtKeep,
+            'editedAt' => $editedAtKeep,
+        ];
+        commandDebugLog($dataDir, 'overwrite add', ['eventId' => $eventId]);
+    } else {
+        // 通常の記録（start/stop/merge）には常に乗る。
+        // 新しさを見るのは、この行を以前に overwrite したときだけ。
+        $prevEdit = $prev['editedAt'] ?? null;
+        if (is_string($prevEdit) && $prevEdit !== '' && commandMsFromIso($prevEdit) > commandMs($editedDt)) {
+            commandDebugLog($dataDir, 'overwrite 409', [
+                'eventId' => $eventId,
+                'prevEditedAt' => $prevEdit,
+                'editedAt' => $editedAtKeep,
+            ]);
+            fail(409, '新しい編集がある');
+        }
+    }
+
+    $origNs = $ns;
+    $origNe = $ne;
+    $snapped = snapEventTimes($events, $eventId, $ns, $ne, $nowMs, 'both', true);
+    $ns = $snapped['startMs'];
+    $ne = $snapped['endMs'] ?? $ne;
+    if ($ne - $ns < COMMAND_MIN_RECORD_MS) {
+        fail(400, '1秒未満の記録にはできません');
+    }
+    $startedAtKeep = isoOrSnapped($startedAtKeep, $origNs, $ns);
+    $endedAtKeep = isoOrSnapped($endedAtKeep, $origNe, $ne);
+    $events = applyTimePatches($events, $snapped['patches']);
+
+    $next = clipOthersForOverwrite(
+        $events,
+        $eventId,
+        $ns,
+        $ne,
+        $startedAtKeep,
+        $endedAtKeep,
+        $nowMs,
+        $editedAtKeep,
+    );
+
+    $painted = $prev;
+    $painted['startedAt'] = $startedAtKeep;
+    $painted['endedAt'] = $endedAtKeep;
+    $painted['updatedAt'] = $editedAtKeep;
+    $painted['editedAt'] = $editedAtKeep;
+    if ($task !== null && $folder !== null) {
+        $taskChanged = ($prev['taskId'] ?? null) !== $task['id'];
+        $painted['taskId'] = $task['id'];
+        $painted['folderId'] = $folder['id'];
+        if ($taskChanged) {
+            $painted['taskName'] = $task['name'];
+            $painted['folderName'] = $folder['name'];
+            $painted['taskColor'] = $task['color'];
+            $painted['folderColor'] = $folder['color'];
+        }
+    }
+    $next[] = $painted;
+
+    $written = persistEventList($dataDir, $index, $chunks, $next, $fileStamp);
+    commandDebugLog($dataDir, 'overwrite ok', ['eventId' => $eventId]);
+    echoCommandWrite($tasks, $index, $chunks, $written);
+}
+
 function handleUpdate(string $dataDir): void
 {
     $body = readJsonBody(true);
@@ -1748,6 +2041,7 @@ function handleUpdate(string $dataDir): void
         $prevOpen ? null : $endMs,
         $nowMs,
         $move,
+        true,
     );
     $startMs = $snapped['startMs'];
     if ($snapped['endMs'] !== null) {
@@ -1758,14 +2052,7 @@ function handleUpdate(string $dataDir): void
         ? null
         : isoOrSnapped($endedAtKeep, commandMsFromIso($endedAtKeep), $endMs);
 
-    validateEventRange(
-        allEvents($chunks),
-        $startMs,
-        $endMs,
-        $eventId,
-        $nowMs,
-        $validateEndBound,
-    );
+    assertEventTimeBounds($startMs, $endMs, $nowMs, $validateEndBound);
 
     $taskChanged = ($prev['taskId'] ?? null) !== $task['id'];
     $updated = $prev;
@@ -1781,12 +2068,20 @@ function handleUpdate(string $dataDir): void
     $updated['endedAt'] = $endedAtIso;
     $updated['updatedAt'] = $stamp;
 
-    $dirty = upsertEvents(
-        $chunks,
-        replacementsFromPatches($chunks, $snapped['patches'], $updated, $stamp),
+    $events = applyTimePatches(allEvents($chunks), $snapped['patches']);
+    $clipEndIso = $endedAtIso ?? $stamp;
+    $next = clipOthersForOverwrite(
+        $events,
+        $eventId,
+        $startMs,
+        $endMs,
+        $startedAt,
+        $clipEndIso,
+        $nowMs,
         $stamp,
     );
-    $written = persistCommandWrites($dataDir, $index, $dirty, $stamp);
+    $next[] = $updated;
+    $written = persistEventList($dataDir, $index, $chunks, $next, $stamp);
     echoCommandWrite($tasks, $index, $chunks, $written);
 }
 
@@ -1841,7 +2136,7 @@ function handleAdd(string $dataDir): void
     $index = loadEventsIndex($dataDir);
     $chunks = loadChunks($dataDir, $index['chunks'], $stamp);
 
-    $snapped = snapEventTimes(allEvents($chunks), null, $startMs0, $endMs0, $nowMs, 'both');
+    $snapped = snapEventTimes(allEvents($chunks), null, $startMs0, $endMs0, $nowMs, 'both', true);
     $startMs = $snapped['startMs'];
     $endMs = $snapped['endMs'];
     if ($endMs === null) {
@@ -1849,7 +2144,7 @@ function handleAdd(string $dataDir): void
     }
     $startedAt = isoOrSnapped($body['startedAt'], $startMs0, $startMs);
     $endedAt = isoOrSnapped($body['endedAt'], $endMs0, $endMs);
-    validateEventRange(allEvents($chunks), $startMs, $endMs, null, $nowMs, true);
+    assertEventTimeBounds($startMs, $endMs, $nowMs, true);
 
     $ev = [
         'id' => newUuid(),
@@ -1864,12 +2159,19 @@ function handleAdd(string $dataDir): void
         'createdAt' => $stamp,
         'updatedAt' => $stamp,
     ];
-    $dirty = upsertEvents(
-        $chunks,
-        replacementsFromPatches($chunks, $snapped['patches'], $ev, $stamp),
+    $events = applyTimePatches(allEvents($chunks), $snapped['patches']);
+    $next = clipOthersForOverwrite(
+        $events,
+        $ev['id'],
+        $startMs,
+        $endMs,
+        $startedAt,
+        $endedAt,
+        $nowMs,
         $stamp,
     );
-    $written = persistCommandWrites($dataDir, $index, $dirty, $stamp);
+    $next[] = $ev;
+    $written = persistEventList($dataDir, $index, $chunks, $next, $stamp);
     echoCommandWrite($tasks, $index, $chunks, $written);
 }
 
@@ -2280,6 +2582,7 @@ function handleCommand(string $dataDir, string $resource, string $method): void
         'signal-stop' => 'handleSignalStop',
         'merge-queue' => 'handleMergeQueue',
         'stop' => 'handleStop',
+        'overwrite' => 'handleOverwrite',
         'update' => 'handleUpdate',
         'delete' => 'handleDelete',
         'add' => 'handleAdd',
