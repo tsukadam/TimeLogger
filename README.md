@@ -1,9 +1,12 @@
 # TimeLogger
 
-個人用ライフログ・タイムトラッカー。スマホ（PWA）で使う前提の自分専用アプリ。
+自分のサーバーに置いて使う、ライフログ／タイムトラッカー。画面の本体はスマホの PWA。Wear OS の窓口は末尾。
 
 - 一度に記録できるタスクは 1 つだけ。別のタスクを開始すると前の記録は自動で終了する
 - 記録は JSON でサーバーに保存され、URL を直接読めば AI などの外部ツールからも参照できる
+- 認証はない。置き場所の URL を知っている人が読めて書ける
+
+`data/` にあるのは挙動確認用の見本（フォルダ 2・タスク 4・記録は 1 日分＋記録中 1 本）。自分のログはコミットしない。
 
 ## 画面
 
@@ -27,19 +30,27 @@ npm run dev        # Vite 開発サーバー
 php -S 127.0.0.1:8080 -t .   # API 用ローカル PHP サーバー（別ターミナル）
 ```
 
-`/api` と `/data` は Vite の proxy 経由で PHP サーバーに流れる。
+`/api` と `/data` は Vite の proxy 経由で PHP サーバーに流れる。クローンした直後は見本データで動く。
 
-## ビルド
+## ビルド／デプロイ
 
 ```bash
 npm run build      # dist/ に出力（ベースパスは VITE_BASE_PATH で変更可）
 ```
 
-`dist/` と `api/`、`data/` をサーバーに配置する。
+Windows なら `build-web.bat` で `build/timelogger/` と zip が出る。サーバーへは `dist/`（またはその中身）と `api/`、初回だけ `data/` を置く。二回目以降に `data/` を上書きするとログが消えるので、`build-web.bat` は既定で data を含めない。初回だけ `build-web.bat withdata`。
 
 ## 注意
 
-本体のURLを知っている人は誰でもデータにアクセスでき、編集できるので、置き場所には気を付けてください。
+本体の URL を知っている人は誰でもデータにアクセスでき、編集できるので、置き場所には気を付けてください。
+
+## Wear OS（おまけ）
+
+同じ API を叩く Pixel Watch 向けの窓口。フォルダ／タスクの新規作成や本丸のグラフは時計にはない。記録の開始・停止、半日の簡易グラフ、文字盤タイルからよく使う項目を開始できる。
+
+API の URL はビルド時に APK へ埋め込まれる。配布用の出来合い APK は置いていない。`wear/local.properties.example` を `wear/local.properties` にコピーし、`timelogger.api.base` を自分のサーバーの API 口にする。
+
+Android Studio では `wear/` を開いて **app** モジュールを、接続した時計へ Run する。コマンドなら `wear/build.bat` のあと `wear/install.bat`（無線 adb）。
 
 ## ライセンス
 

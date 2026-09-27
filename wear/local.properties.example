@@ -1,0 +1,3 @@
+# Android Studio が sdk.dir を追記する。
+# API の口はビルド時に APK へ埋め込まれる。自分で置いたサーバーの URL を書く。
+timelogger.api.base=https://example.com/your/secret/path/api/

@@ -5,6 +5,9 @@ node_modules/
 dist/
 build/
 
+# 手元の本番 data 退避（コミットしない）
+_local_data_backup/
+
 # ローカル環境
 .env
 .env.*
@@ -20,7 +23,27 @@ Thumbs.db
 
 # API 書き込みの一時・ロック（data/ 配下）
 data/*.lock
+data/**/*.lock
 data/.*.tmp
 
 # クライアント／サーバー追記のデバッグログ（肥大化・端末情報あり）
 data/debug.log
+
+# 旧一枚ファイルとバックアップ（API は data/events/ を使う）
+data/events.json
+data/*.bak*
+
+# 四半期ファイルは見本（index と 2026Q3）以外を足さない
+data/events/*.json
+!data/events/index.json
+!data/events/2026Q3.json
+
+# Wear OS（API URL は wear/local.properties。成果物はコミットしない）
+wear/.gradle/
+wear/.kotlin/
+wear/build/
+wear/app/build/
+wear/local.properties
+wear/.idea/
+wear/*.iml
+*.apk

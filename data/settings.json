@@ -1,19 +1,20 @@
 {
-    "updatedAt": "2026-07-15T22:20:45+09:00",
+    "updatedAt": "2026-09-26T18:00:00+09:00",
     "log": {
-        "kind": "custom",
-        "day": "2026-07-13",
-        "weekStart": "2026-06-03",
-        "monthStart": "2026-03-01",
-        "yearStart": "2025-06-01",
-        "customStart": "2026-05-01",
-        "customEnd": "2026-07-15",
-        "customApplied": {
-            "start": "2026-05-01",
-            "end": "2026-07-15"
-        },
-        "monthYear": 2026,
-        "month": 1,
-        "year": 2025
+        "kind": "day",
+        "day": "2026-09-26",
+        "weekStart": "2026-09-21",
+        "monthStart": "2026-09-01",
+        "yearStart": "2026-01-01",
+        "customStart": "2026-09-01",
+        "customEnd": "2026-09-26",
+        "customApplied": null,
+        "customGrain": "day",
+        "rangeAlignedOn": {
+            "day": "2026-09-26",
+            "week": "2026-09-26",
+            "month": "2026-09-26",
+            "year": "2026-09-26"
+        }
     }
 }
