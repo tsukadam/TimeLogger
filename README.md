@@ -14,6 +14,8 @@
 
 ## 画面
 
+<img width="30%" height="30%" alt="tasks" src="https://github.com/user-attachments/assets/7fe8bebe-c1da-4b0f-bb1b-69bdc97adbb9" />　<img width="30%" height="30%" alt="activity" src="https://github.com/user-attachments/assets/a29f0b22-26f4-4d18-a9fd-63500d3694f7" />　<img width="30%" height="30%" alt="log" src="https://github.com/user-attachments/assets/aba69e24-316b-4e62-bae3-8ede05f8e00f" />
+
 - **Tasks** — フォルダ／タスクの管理と記録の開始・停止
 - **Activity** — 記録の一覧・編集・手動追加
 - **Log** — 期間別の集計（Tracked Time / Summary / Tasks / Genres 円グラフ）
@@ -45,11 +47,16 @@ Windows なら `build-web.bat` で `build/timelogger/` と zip が出る。サ�
 
 ## 注意
 
-本体の URL を知っている人は誰でもデータにアクセスでき、編集できるので、置き場所には気を付けてください。
+本体の URL だけ知っていれば誰でもデータにアクセスでき、編集できるので、置き場所に注意。
 
-## Wear OS（おまけ）
+## Wear OS版
+<img width="30%" height="30%" alt="watch" src="https://github.com/user-attachments/assets/cfef2c08-1fd1-42a2-8bbd-9cbfe380365b" />
+<img width="30%" height="30%" alt="watch" src="https://github.com/user-attachments/assets/fbcfdfad-3ae8-490b-b805-33e6f1ef0c7f" />
+<img width="30%" height="30%" alt="watch" src="https://github.com/user-attachments/assets/84453603-b760-4b79-bf19-a1b0bbc0e8b2" />
 
 同じ API を叩く Pixel Watch 向けの窓口。フォルダ／タスクの新規作成はない。グラフはデイリー２週間分のみ。ウィジェットでよく使う項目を開始できる。
+
+Pixel Watch 5 以外は動作未確認。
 
 API の URL はビルド時に APK へ埋め込まれる。`wear/local.properties.example` を `wear/local.properties` にコピーし、`timelogger.api.base` を自分のサーバーの API 口にする。
 
