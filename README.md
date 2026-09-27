@@ -54,7 +54,7 @@ Windows なら `build-web.bat` で `build/timelogger/` と zip が出る。サ�
 <img width="30%" height="30%" alt="watch" src="https://github.com/user-attachments/assets/fbcfdfad-3ae8-490b-b805-33e6f1ef0c7f" />
 <img width="30%" height="30%" alt="watch" src="https://github.com/user-attachments/assets/84453603-b760-4b79-bf19-a1b0bbc0e8b2" />
 
-同じ API を叩く Pixel Watch 向けの窓口。フォルダ／タスクの新規作成はない。グラフはデイリー２週間分のみ。ウィジェットでよく使う項目を開始できる。
+同じ API を叩く Pixel Watch 向けの窓口。フォルダ／タスクの新規作成はない。グラフはデイリー２週間分のみ。ウィジェットでよく使う項目を開始できる。オフライン時はキューに記録を貯め、オンラインになった時に書き込み。
 
 Pixel Watch 5 以外は動作未確認。
 
