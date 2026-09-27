@@ -14,6 +14,7 @@ import {
   isoToTimeInput,
   nowIso,
 } from '../lib/time'
+import { findScrollParent } from '../lib/domScroll'
 import { useNowTick } from '../lib/useNowTick'
 import { useStoreActions, useStoreBusy, useStoreData } from '../state/Store'
 import type { Event } from '../types'
@@ -34,16 +35,6 @@ type SheetState =
   | { type: 'closed' }
   | { type: 'edit'; id: string }
   | { type: 'add'; initial: EventFormSeed }
-
-function findScrollParent(el: HTMLElement | null): Element | null {
-  let cur: HTMLElement | null = el
-  while (cur) {
-    const oy = getComputedStyle(cur).overflowY
-    if (oy === 'auto' || oy === 'scroll') return cur
-    cur = cur.parentElement
-  }
-  return null
-}
 
 /**
  * 直近12時間の記録の「穴」（時系列上の空白）のうち最古を返す。

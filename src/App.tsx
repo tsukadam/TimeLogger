@@ -11,12 +11,11 @@ import { useTabIndicator } from './lib/useTabIndicator'
 import { StoreProvider } from './state/Store'
 import { ActivityScreen } from './screens/ActivityScreen'
 import { LogScreen } from './screens/log/LogScreen'
-import { SettingsScreen } from './screens/SettingsScreen'
 import { TasksScreen } from './screens/TasksScreen'
 import styles from './App.module.css'
 
 type MainTab = 'tasks' | 'activity'
-type Route = 'main' | 'log' | 'settings'
+type Route = 'main' | 'log'
 
 function useFadeScrollbar() {
   const [scrolling, setScrolling] = useState(false)
@@ -288,8 +287,7 @@ export default function App() {
           ) : (
             <div key="sub" className={paneClass}>
               <RefreshableScroll className={scrollClass} onScroll={onScroll}>
-                {route === 'log' && <LogScreen />}
-                {route === 'settings' && <SettingsScreen />}
+                <LogScreen />
               </RefreshableScroll>
             </div>
           )}

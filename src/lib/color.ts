@@ -153,27 +153,6 @@ export function taskColorGrid(baseHex: string): string[][] {
   })
 }
 
-/**
- * タスク色がフォルダ基準グリッド上のどのマスか（見つからなければ null）。
- * 色から座標を推測する後ろ向きの引きなので、`colorRef` を持たない
- * 古い行の移行にだけ使う。選んだ時点の座標があるなら必ずそちらを使う。
- */
-export function findTaskColorPos(
-  folderColor: string,
-  taskColor: string,
-): { row: number; col: number } | null {
-  const grid = taskColorGrid(folderColor)
-  const target = normalizeHex(taskColor).toLowerCase()
-  for (let row = 0; row < grid.length; row++) {
-    for (let col = 0; col < grid[row]!.length; col++) {
-      if (grid[row]![col]!.toLowerCase() === target) {
-        return { row, col }
-      }
-    }
-  }
-  return null
-}
-
 /** フォルダ用デフォルト色（適当な固定パレット） */
 export const FOLDER_PALETTE = [
   '#e08a3c',
