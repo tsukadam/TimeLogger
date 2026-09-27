@@ -1,19 +1,18 @@
 # TimeLogger
 
-自分のサーバーに置いて使う、ライフログ／タイムトラッカー。画面の本体はスマホの PWA。Wear OS の窓口は末尾。
+自分のサーバーに置いて使うシンプルなロガー。PWA対応。Pixel watch用のアプリ付属。
 
-- 一度に記録できるタスクは 1 つだけ。別のタスクを開始すると前の記録は自動で終了する
-- 記録は JSON でサーバーに保存され、URL を直接読めば AI などの外部ツールからも参照できる
-- 認証はない。置き場所の URL を知っている人が読めて書ける
+- 一度に記録できるタスクは1つだけ（単線のグラフになる）
+- 記録はJSONでサーバーに保存され、AIなどの外部ツールで直接参照できる
+- 認証の類はないので注意。置き場所のURLを知っている人は誰でも全ての操作ができる
 
-`data/` にあるのは挙動確認用の見本（フォルダ 2・タスク 4・記録は 1 日分＋記録中 1 本）。自分のログはコミットしない。
+`data/` にあるのは挙動確認用の見本（フォルダ 2・タスク 4・記録は 1 日分＋記録中 1 本）
 
 ## 画面
 
 - **Tasks** — フォルダ／タスクの管理と記録の開始・停止
 - **Activity** — 記録の一覧・編集・手動追加
 - **Log** — 期間別の集計（Tracked Time / Summary / Tasks / Genres 円グラフ）
-- **Setting** — 設定（作りかけ）
 
 ## スタック
 
@@ -46,9 +45,9 @@ Windows なら `build-web.bat` で `build/timelogger/` と zip が出る。サ�
 
 ## Wear OS（おまけ）
 
-同じ API を叩く Pixel Watch 向けの窓口。フォルダ／タスクの新規作成や本丸のグラフは時計にはない。記録の開始・停止、半日の簡易グラフ、文字盤タイルからよく使う項目を開始できる。
+同じ API を叩く Pixel Watch 向けの窓口。フォルダ／タスクの新規作成はない。グラフはデイリー２週間分のみ。ウィジェットでよく使う項目を開始できる。
 
-API の URL はビルド時に APK へ埋め込まれる。配布用の出来合い APK は置いていない。`wear/local.properties.example` を `wear/local.properties` にコピーし、`timelogger.api.base` を自分のサーバーの API 口にする。
+API の URL はビルド時に APK へ埋め込まれる。`wear/local.properties.example` を `wear/local.properties` にコピーし、`timelogger.api.base` を自分のサーバーの API 口にする。
 
 Android Studio では `wear/` を開いて **app** モジュールを、接続した時計へ Run する。コマンドなら `wear/build.bat` のあと `wear/install.bat`（無線 adb）。
 
