@@ -62,6 +62,13 @@ API の URL はビルド時に APK へ埋め込まれる。`wear/local.propertie
 
 Android Studio では `wear/` を開いて **app** モジュールを、接続した時計へ Run する。コマンドなら `wear/build.bat` のあと `wear/install.bat`（無線 adb）。
 
+<img width="30%" height="30%" alt="1771169018" src="https://github.com/user-attachments/assets/57bbe605-49aa-44b8-96be-c588a87f3d46" />
+<img width="30%" height="30%" alt="1787233565" src="https://github.com/user-attachments/assets/376d3ed2-1ed1-46f9-b880-e6613328d696" />
+
+項目長押しで、ウォッチ内にステータスのある項目を選んで紐付け可能。
+エクササイズＯＮ／ＯＦＦや睡眠に従って記録を開始できる（終了時は直前の項目に戻る）。
+睡眠は時々誤作動するので５分以下は無視する。
+
 ## ライセンス
 
 MIT License。詳細は [LICENSE](LICENSE) を参照。
