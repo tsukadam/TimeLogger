@@ -16,17 +16,17 @@ class ExerciseBindingsStore private constructor(context: Context) {
     var typeToTask by mutableStateOf(readFromDisk())
         private set
 
-    fun taskIdFor(typeName: String): String? = readFromDisk()[typeName]
+    fun taskIdFor(typeName: String): String? = typeToTask[typeName]
 
     fun typeNameFor(taskId: String): String? =
         typeToTask.entries.firstOrNull { it.value == taskId }?.key
 
     fun isLinked(taskId: String): Boolean = typeToTask.containsValue(taskId)
 
-    fun linkedTaskIds(): Set<String> = readFromDisk().values.toSet()
+    fun linkedTaskIds(): Set<String> = typeToTask.values.toSet()
 
     fun bind(taskId: String, typeName: String) {
-        val next = readFromDisk()
+        val next = typeToTask
             .filter { it.key != typeName && it.value != taskId }
             .toMutableMap()
         next[typeName] = taskId
@@ -34,7 +34,7 @@ class ExerciseBindingsStore private constructor(context: Context) {
     }
 
     fun unbind(taskId: String) {
-        persist(readFromDisk().filterValues { it != taskId })
+        persist(typeToTask.filterValues { it != taskId })
     }
 
     private fun persist(next: Map<String, String>) {
