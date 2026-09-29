@@ -12,7 +12,6 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import androidx.wear.tiles.TileBuilders.Tile
 import androidx.wear.tiles.TileService
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
@@ -64,10 +63,8 @@ class RecordRepository internal constructor(
         val future = SettableFuture.create<Void?>()
         tilePullExecutor.execute {
             try {
-                pullNowForTile()
-                pingTile()
+                if (pullNowForTile()) pingTile()
             } catch (_: Exception) {
-                pingTile()
             } finally {
                 future.set(null)
             }
@@ -75,24 +72,12 @@ class RecordRepository internal constructor(
         return future
     }
 
-    fun tileLayoutAfterNow(build: () -> Tile): ListenableFuture<Tile> {
-        val future = SettableFuture.create<Tile>()
-        tilePullExecutor.execute {
-            try {
-                pullNowForTile()
-            } catch (_: Exception) {
-            } finally {
-                future.set(build())
-            }
-        }
-        return future
-    }
-
-    private fun pullNowForTile() {
+    private fun pullNowForTile(): Boolean {
         val now = System.currentTimeMillis()
-        if (now - lastOkTileNowMs in 0 until 5_000L) return
+        if (now - lastOkTileNowMs in 0 until 5_000L) return false
         applyNowToStore(api.fetchNowForTile())
         lastOkTileNowMs = System.currentTimeMillis()
+        return true
     }
 
     private fun applyNowToStore(now: NowResult) {
