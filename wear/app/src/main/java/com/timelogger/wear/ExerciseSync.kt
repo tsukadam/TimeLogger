@@ -98,6 +98,16 @@ object ExerciseSync {
         Handler(Looper.getMainLooper()).post(cb)
     }
 
+    /** 手動の開始・停止・編集。ヘルス起点のセッションと睡眠待ちを捨て、直前復帰しない。 */
+    fun dropHsSession(context: Context) {
+        val app = context.applicationContext
+        val store = ExerciseSyncStore(app)
+        cancelPendingSleepOn(app, store)
+        store.clearPendingSleepOff()
+        cancelSleepConfirm(app)
+        store.clearSession(store.lastFingerprint().orEmpty())
+    }
+
     internal fun process(
         context: Context,
         store: ExerciseSyncStore,
@@ -212,8 +222,6 @@ object ExerciseSync {
     ) {
         if (store.pendingSleepOnAt() != null) {
             cancelPendingSleepOn(context, store)
-            store.setLastFingerprint(signal.fingerprint)
-            return
         }
         if (store.sessionKind() == KIND_SLEEP) {
             if (store.pendingSleepOffAt() == null) {
@@ -237,9 +245,16 @@ object ExerciseSync {
             fingerprint?.let { store.setLastFingerprint(it) }
             return
         }
+        val repo = RecordRepository.get(context)
+        val stillHs = repo.liveCurrentEventId() == eventId
+        if (!stillHs) {
+            store.clearSession(fingerprint ?: store.lastFingerprint().orEmpty())
+            notifyUi()
+            return
+        }
         val prev = store.prevTaskId()
         try {
-            RecordRepository.get(context).signalStop(eventId, atMs, prev)
+            repo.signalStop(eventId, atMs, prev)
         } catch (e: ApiException) {
             if (e.status != 409 && e.status != 404) throw e
         }

@@ -79,7 +79,15 @@ class RecordRepository internal constructor(
         }
     }
 
+    fun liveCurrentEventId(): String? {
+        if (isOnline()) {
+            runCatching { api.fetchNow().current?.id }.getOrNull()?.let { return it }
+        }
+        return synchronized(lock) { store.openEvent()?.id }
+    }
+
     fun toggleTaskLocal(taskId: String) {
+        ExerciseSync.dropHsSession(app)
         val open = synchronized(lock) { store.openEvent() }
         val at = ApiTime.iso(Instant.now())
         if (open?.taskId == taskId) {
@@ -90,6 +98,7 @@ class RecordRepository internal constructor(
     }
 
     fun startTask(taskId: String) {
+        ExerciseSync.dropHsSession(app)
         val at = ApiTime.iso(Instant.now())
         val eventId = newWatchEventId()
         if (isOnline()) {
@@ -105,6 +114,7 @@ class RecordRepository internal constructor(
     }
 
     fun stopCurrent() {
+        ExerciseSync.dropHsSession(app)
         val current = synchronized(lock) { store.openEvent() } ?: return
         val at = ApiTime.iso(Instant.now())
         if (isOnline()) {
@@ -168,6 +178,7 @@ class RecordRepository internal constructor(
         endedAt: String,
         taskId: String? = null,
     ) {
+        ExerciseSync.dropHsSession(app)
         val editedAt = ApiTime.iso(Instant.now())
         if (isOnline()) {
             try {
@@ -186,6 +197,7 @@ class RecordRepository internal constructor(
     }
 
     fun deleteEvent(eventId: String) {
+        ExerciseSync.dropHsSession(app)
         if (isOnline()) {
             try {
                 api.delete(eventId)

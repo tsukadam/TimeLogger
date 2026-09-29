@@ -25,6 +25,7 @@ import androidx.wear.protolayout.material3.textEdgeButton
 import androidx.wear.protolayout.modifiers.clickable
 import androidx.wear.protolayout.types.argb
 import androidx.wear.protolayout.types.layoutString
+import androidx.wear.tiles.EventBuilders.TileInteractionEvent
 import androidx.wear.tiles.RequestBuilders
 import androidx.wear.tiles.TileBuilders.Tile
 import androidx.wear.tiles.TileService
@@ -38,6 +39,13 @@ class LoggerTileService : TileService() {
     override fun onTileRequest(requestParams: RequestBuilders.TileRequest): ListenableFuture<Tile> =
         Futures.immediateFuture(buildLoggerTile(this, requestParams, page = 0, title = "TimeLogger"))
 
+    override fun onRecentInteractionEventsAsync(
+        events: MutableList<TileInteractionEvent>,
+    ): ListenableFuture<Void?> {
+        onLoggerTileShown(this, LoggerTileService::class.java, events)
+        return Futures.immediateFuture(null)
+    }
+
     override fun onTileResourcesRequest(
         requestParams: RequestBuilders.ResourcesRequest,
     ): ListenableFuture<ResourceBuilders.Resources> = emptyTileResources()
@@ -46,6 +54,13 @@ class LoggerTileService : TileService() {
 class LoggerMoreTileService : TileService() {
     override fun onTileRequest(requestParams: RequestBuilders.TileRequest): ListenableFuture<Tile> =
         Futures.immediateFuture(buildLoggerTile(this, requestParams, page = 1, title = "TimeLogger 2"))
+
+    override fun onRecentInteractionEventsAsync(
+        events: MutableList<TileInteractionEvent>,
+    ): ListenableFuture<Void?> {
+        onLoggerTileShown(this, LoggerMoreTileService::class.java, events)
+        return Futures.immediateFuture(null)
+    }
 
     override fun onTileResourcesRequest(
         requestParams: RequestBuilders.ResourcesRequest,
@@ -56,6 +71,16 @@ internal val LoggerTileServices = listOf(
     LoggerTileService::class.java,
     LoggerMoreTileService::class.java,
 )
+
+private fun onLoggerTileShown(
+    context: Context,
+    service: Class<out TileService>,
+    events: List<TileInteractionEvent>,
+) {
+    if (events.none { it.eventType == TileInteractionEvent.ENTER }) return
+    TileService.getUpdater(context).requestUpdate(service)
+    RecordRepository.get(context).scheduleFlush()
+}
 
 private const val TileRes = "1"
 private const val TileFreshMs = 30L * 60L * 1000L
