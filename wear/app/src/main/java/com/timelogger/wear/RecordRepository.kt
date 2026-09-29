@@ -13,6 +13,8 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.wear.tiles.TileService
+import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.SettableFuture
 import com.timelogger.wear.api.ApiException
 import com.timelogger.wear.api.CommandWrite
 import com.timelogger.wear.api.Event
@@ -43,6 +45,8 @@ class RecordRepository internal constructor(
 ) {
     private val lock = Any()
     private val store = LocalStore(app)
+    @Volatile
+    private var lastTilePullMs = 0L
 
     init {
         synchronized(lock) { store.load() }
@@ -53,6 +57,26 @@ class RecordRepository internal constructor(
     }
 
     fun localCurrentTaskId(): String? = synchronized(lock) { store.openEvent()?.taskId }
+
+    fun pullWhenTileVisible(): ListenableFuture<Void?> {
+        val future = SettableFuture.create<Void?>()
+        tilePullExecutor.execute {
+            try {
+                val now = System.currentTimeMillis()
+                if (now - lastTilePullMs < TilePullDebounceMs) return@execute
+                try {
+                    flushThenPull()
+                } catch (_: Exception) {
+                    pingTile()
+                } finally {
+                    lastTilePullMs = System.currentTimeMillis()
+                }
+            } finally {
+                future.set(null)
+            }
+        }
+        return future
+    }
 
     fun scheduleFlush() {
         WorkManager.getInstance(app).enqueueUniqueWork(
@@ -539,7 +563,11 @@ class RecordRepository internal constructor(
 
     companion object {
         private const val FLUSH_WORK = "tl-flush"
+        private const val TilePullDebounceMs = 8_000L
         private val tokyo = ZoneId.of("Asia/Tokyo")
+        private val tilePullExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+            Thread(r, "tl-tile-pull").apply { isDaemon = true }
+        }
 
         @Volatile
         private var instance: RecordRepository? = null
