@@ -115,11 +115,11 @@ internal fun buildLoggerTile(
         }
     }
     val snap = RecordRepository.get(context).snapshot()
-    val linked = ExerciseBindingsStore.get(context).typeToTask.values.toSet()
+    val linkedIds = ExerciseBindingsStore.get(context).linkedTaskIds()
     val tasks = topTasksByCount(
         tasks = snap.tasks,
         events = snap.events,
-        linkedIds = linked,
+        linkedIds = linkedIds,
         nowMs = System.currentTimeMillis(),
         skip = page * TilePageSize,
         limit = TilePageSize,
@@ -359,11 +359,12 @@ internal fun topTasksByCount(
     skip: Int,
     limit: Int,
 ): List<Task> {
+    val allowed = tasks.filter { it.id !in linkedIds }.associateBy { it.id }
     val cutoff = nowMs - ChronoUnit.DAYS.duration.toMillis() * LocalLogDays
     val counts = HashMap<String, Int>()
     val durations = HashMap<String, Long>()
     for (ev in events) {
-        if (ev.taskId in linkedIds) continue
+        if (ev.taskId !in allowed) continue
         val start = startedAtMillis(ev.startedAt) ?: continue
         if (start < cutoff && ev.endedAt != null) {
             val end = startedAtMillis(ev.endedAt) ?: continue
@@ -373,14 +374,12 @@ internal fun topTasksByCount(
         val end = if (ev.endedAt.isNullOrEmpty()) nowMs else (startedAtMillis(ev.endedAt) ?: nowMs)
         durations[ev.taskId] = (durations[ev.taskId] ?: 0L) + maxOf(0L, end - maxOf(start, cutoff))
     }
-    val byId = tasks.associateBy { it.id }
     return counts.entries
         .sortedWith(
             compareByDescending<Map.Entry<String, Int>> { it.value }
                 .thenByDescending { durations[it.key] ?: 0L },
         )
-        .mapNotNull { byId[it.key] }
-        .filter { it.id !in linkedIds }
+        .mapNotNull { allowed[it.key] }
         .drop(skip)
         .take(limit)
 }
