@@ -94,7 +94,7 @@ internal class LocalStore(context: Context) {
                     openId = op.eventId
                     out.add(op)
                 }
-                "edit" -> out.add(op)
+                "edit", "update" -> out.add(op)
                 "delete" -> {
                     if (openId == op.eventId) openId = null
                     out.add(op)

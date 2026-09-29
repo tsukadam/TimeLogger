@@ -86,6 +86,18 @@ class TimeLoggerApi(
         return parseWrite(request("POST", "overwrite", body))
     }
 
+    fun update(
+        eventId: String,
+        startedAt: String,
+        taskId: String? = null,
+    ): CommandWrite {
+        val body = JSONObject()
+            .put("eventId", eventId)
+            .put("startedAt", startedAt)
+        if (taskId != null) body.put("taskId", taskId)
+        return parseWrite(request("POST", "update", body))
+    }
+
     fun delete(eventId: String): CommandWrite {
         return parseWrite(request("POST", "delete", JSONObject().put("eventId", eventId)))
     }

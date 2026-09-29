@@ -102,6 +102,16 @@ class LoggerController(
         return true
     }
 
+    fun updateOpenEvent(
+        eventId: String,
+        startedAt: String,
+        taskId: String? = null,
+    ): Boolean {
+        if (busy) return false
+        runWrite(eventId) { repo.updateOpenEvent(eventId, startedAt, taskId) }
+        return true
+    }
+
     fun deleteEvent(eventId: String): Boolean {
         if (busy) return false
         runWrite(eventId) { repo.deleteEvent(eventId) }

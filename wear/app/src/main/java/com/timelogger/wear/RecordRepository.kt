@@ -220,6 +220,28 @@ class RecordRepository internal constructor(
         queueOverwrite(eventId, startedAt, endedAt, editedAt, taskId)
     }
 
+    fun updateOpenEvent(
+        eventId: String,
+        startedAt: String,
+        taskId: String? = null,
+    ) {
+        ExerciseSync.dropHsSession(app)
+        if (isOnline()) {
+            try {
+                api.update(eventId, startedAt, taskId)
+                synchronized(lock) {
+                    paintOpenStart(eventId, startedAt, taskId)?.let { store.setEvents(it) }
+                }
+                afterOnlineWrite()
+                return
+            } catch (e: ApiException) {
+                Log.w(RECORD_TAG, "update live ${e.status} ${e.message}")
+                if (isClientError(e)) throw e
+            }
+        }
+        queueOpenUpdate(eventId, startedAt, taskId)
+    }
+
     fun deleteEvent(eventId: String) {
         ExerciseSync.dropHsSession(app)
         if (isOnline()) {
@@ -257,6 +279,7 @@ class RecordRepository internal constructor(
             try {
                 when (ops.first().op) {
                     "edit" -> flushOneEdit(ops.first())
+                    "update" -> flushOneUpdate(ops.first())
                     "delete" -> flushOneDelete(ops.first())
                     else -> flushStartStopPrefix(ops)
                 }
@@ -317,6 +340,28 @@ class RecordRepository internal constructor(
         scheduleFlush()
     }
 
+    private fun queueOpenUpdate(
+        eventId: String,
+        startedAt: String,
+        taskId: String?,
+    ) {
+        synchronized(lock) {
+            val next = paintOpenStart(eventId, startedAt, taskId)
+                ?: throw ApiException(400, "開始はいまより前にしてください")
+            store.setEvents(next)
+            store.enqueue(
+                QueueOp(
+                    op = "update",
+                    at = ApiTime.iso(Instant.now()),
+                    eventId = eventId,
+                    taskId = taskId,
+                    startedAt = startedAt,
+                ),
+            )
+        }
+        scheduleFlush()
+    }
+
     private fun queueDelete(eventId: String) {
         synchronized(lock) {
             store.setEvents(store.events.filter { it.id != eventId })
@@ -338,6 +383,22 @@ class RecordRepository internal constructor(
             eventId,
             startedAt,
             endedAt,
+            task = task,
+            folder = folder,
+        )
+    }
+
+    private fun paintOpenStart(
+        eventId: String,
+        startedAt: String,
+        taskId: String?,
+    ): List<Event>? {
+        val task = taskId?.let { id -> store.tasks.find { it.id == id } }
+        val folder = task?.let { t -> store.folders.find { it.id == t.folderId } }
+        return applyOpenStartEdit(
+            store.events,
+            eventId,
+            startedAt,
             task = task,
             folder = folder,
         )
@@ -369,6 +430,30 @@ class RecordRepository internal constructor(
         noteRemote("overwrite ok", op.eventId, null)
     }
 
+    private fun flushOneUpdate(op: QueueOp) {
+        val started = op.startedAt
+        if (started.isNullOrEmpty()) {
+            Log.w(RECORD_TAG, "update drop empty start ${op.eventId}")
+            noteRemote("update drop empty", op.eventId, null)
+            synchronized(lock) { store.dropFlushed(1) }
+            return
+        }
+        try {
+            api.update(op.eventId, started, op.taskId)
+        } catch (e: ApiException) {
+            Log.w(RECORD_TAG, "update ${op.eventId} ${e.status} ${e.message}")
+            noteRemote("update fail", op.eventId, e)
+            if (e.status in 400..499 && e.status != 408) {
+                synchronized(lock) { store.dropFlushed(1) }
+                return
+            }
+            throw e
+        }
+        synchronized(lock) { store.dropFlushed(1) }
+        Log.i(RECORD_TAG, "update flushed ${op.eventId}")
+        noteRemote("update ok", op.eventId, null)
+    }
+
     private fun flushOneDelete(op: QueueOp) {
         try {
             api.delete(op.eventId)
@@ -395,7 +480,7 @@ class RecordRepository internal constructor(
     }
 
     private fun flushStartStopPrefix(ops: List<QueueOp>) {
-        val batch = ops.takeWhile { it.op != "edit" && it.op != "delete" }
+        val batch = ops.takeWhile { it.op != "edit" && it.op != "delete" && it.op != "update" }
         if (batch.isEmpty()) return
         val result = try {
             api.mergeQueue(batch)
@@ -427,7 +512,7 @@ class RecordRepository internal constructor(
             }
         }
         val keepLocalEdits = synchronized(lock) {
-            store.queue.any { it.op == "edit" || it.op == "delete" }
+            store.queue.any { it.op == "edit" || it.op == "update" || it.op == "delete" }
         }
         if (!keepLocalEdits) {
             ingest(result)

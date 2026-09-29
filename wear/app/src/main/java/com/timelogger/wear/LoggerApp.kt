@@ -602,17 +602,17 @@ private fun TransformingLazyColumnItemScope.ActivityRow(
 private data class EventFormTarget(
     val eventId: String?,
     val startedAt: String,
-    val endedAt: String,
+    val endedAt: String?,
     val taskId: String,
     val taskName: String,
     val taskColor: String,
 )
 
-private fun eventFormOf(event: Event, now: Instant = Instant.now()): EventFormTarget =
+private fun eventFormOf(event: Event): EventFormTarget =
     EventFormTarget(
         eventId = event.id,
         startedAt = event.startedAt,
-        endedAt = event.endedAt ?: ApiTime.iso(now),
+        endedAt = event.endedAt,
         taskId = event.taskId,
         taskName = event.taskName,
         taskColor = event.taskColor,
@@ -647,9 +647,10 @@ private fun EventEditScreen(
     onBack: () -> Unit,
 ) {
     val live = form.eventId?.let { id -> controller.events.find { it.id == id } }
+    val recording = form.eventId != null && (live?.endedAt ?: form.endedAt) == null
     var startIso by remember(form) { mutableStateOf(live?.startedAt ?: form.startedAt) }
     var endIso by remember(form) {
-        mutableStateOf(live?.endedAt ?: form.endedAt)
+        mutableStateOf(live?.endedAt ?: form.endedAt.orEmpty())
     }
     var draftTaskId by remember(form) { mutableStateOf(live?.taskId ?: form.taskId) }
     var draftTaskName by remember(form) { mutableStateOf(live?.taskName ?: form.taskName) }
@@ -671,8 +672,16 @@ private fun EventEditScreen(
         pickFolderId = folderId
     }
     val busy = controller.busy
-    val timeInvalid = parseMs(endIso) - parseMs(startIso) < 1000L
-    val timeError = if (timeInvalid) "終了は開始より後にしてください" else null
+    val timeInvalid = if (recording) {
+        System.currentTimeMillis() - parseMs(startIso) < 1000L
+    } else {
+        parseMs(endIso) - parseMs(startIso) < 1000L
+    }
+    val timeError = when {
+        !timeInvalid -> null
+        recording -> "開始はいまより前にしてください"
+        else -> "終了は開始より後にしてください"
+    }
     LaunchedEffect(busy, saving) {
         if (saving && !busy) {
             saving = false
@@ -710,13 +719,15 @@ private fun EventEditScreen(
                     onClick = { setNested(clock = ClockField.Start, folder = false, folderId = null) },
                 )
             }
-            item(key = "end") {
-                TimeFieldRow(
-                    label = "終了",
-                    value = formatClockHms(endIso),
-                    enabled = !busy,
-                    onClick = { setNested(clock = ClockField.End, folder = false, folderId = null) },
-                )
+            if (!recording) {
+                item(key = "end") {
+                    TimeFieldRow(
+                        label = "終了",
+                        value = formatClockHms(endIso),
+                        enabled = !busy,
+                        onClick = { setNested(clock = ClockField.End, folder = false, folderId = null) },
+                    )
+                }
             }
             if (timeError != null) {
                 item(key = "time-error") {
@@ -767,9 +778,12 @@ private fun EventEditScreen(
                     onClick = {
                         if (busy || timeInvalid) return@BackEdgeButton
                         val id = form.eventId ?: newWatchEventId()
-                        if (controller.overwriteEvent(id, startIso, endIso, draftTaskId)) {
-                            saving = true
+                        val ok = if (recording) {
+                            controller.updateOpenEvent(id, startIso, draftTaskId)
+                        } else {
+                            controller.overwriteEvent(id, startIso, endIso, draftTaskId)
                         }
+                        if (ok) saving = true
                     },
                 )
             }

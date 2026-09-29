@@ -219,3 +219,29 @@ private fun paintOverwriteInterval(
     )
     return out.sortedBy { parseMs(it.startedAt) }
 }
+
+/** 記録中の開始変更。隣は [startedAt, いま) で塗り、対象の行は開いたまま。 */
+internal fun applyOpenStartEdit(
+    events: List<Event>,
+    eventId: String,
+    startedAt: String,
+    nowMs: Long = System.currentTimeMillis(),
+    newId: () -> String = { newWatchEventId() },
+    task: Task? = null,
+    folder: Folder? = null,
+): List<Event>? {
+    val nowIso = ApiTime.iso(Instant.ofEpochMilli(nowMs))
+    val painted = applyOverwrite(
+        events,
+        eventId,
+        startedAt,
+        nowIso,
+        nowMs,
+        newId,
+        task,
+        folder,
+    ) ?: return null
+    return painted.map { ev ->
+        if (ev.id == eventId) ev.copy(endedAt = null) else ev
+    }
+}
