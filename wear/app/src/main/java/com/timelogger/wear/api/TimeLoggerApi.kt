@@ -12,11 +12,12 @@ class TimeLoggerApi(
 ) {
     fun fetchNow(): NowResult {
         val json = request("GET", "now")
-        return NowResult(
-            current = json.optEvent("current"),
-            last = json.optEvent("last"),
-            tasksUpdatedAt = json.optString("tasksUpdatedAt"),
-        )
+        return nowResult(json)
+    }
+
+    fun fetchNowForTile(): NowResult {
+        val json = request("GET", "now", connectTimeoutMs = 5_000, readTimeoutMs = 5_000)
+        return nowResult(json)
     }
 
     fun fetchTasks(): TasksFile {
@@ -131,17 +132,27 @@ class TimeLoggerApi(
         )
     }
 
+    private fun nowResult(json: JSONObject): NowResult {
+        return NowResult(
+            current = json.optEvent("current"),
+            last = json.optEvent("last"),
+            tasksUpdatedAt = json.optString("tasksUpdatedAt"),
+        )
+    }
+
     private fun request(
         method: String,
         resource: String,
         body: JSONObject? = null,
         extraQuery: String = "",
+        connectTimeoutMs: Int = 15_000,
+        readTimeoutMs: Int = 30_000,
     ): JSONObject {
         val url = URL("$baseUrl?resource=$resource$extraQuery")
         val conn = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = method
-            connectTimeout = 15_000
-            readTimeout = 30_000
+            connectTimeout = connectTimeoutMs
+            readTimeout = readTimeoutMs
             setRequestProperty("Accept", "application/json")
             setRequestProperty("User-Agent", "TimeLogger-Wear")
             if (body != null) {

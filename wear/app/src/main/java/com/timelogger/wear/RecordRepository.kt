@@ -12,6 +12,7 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.wear.tiles.TileBuilders.Tile
 import androidx.wear.tiles.TileService
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
@@ -19,6 +20,7 @@ import com.timelogger.wear.api.ApiException
 import com.timelogger.wear.api.CommandWrite
 import com.timelogger.wear.api.Event
 import com.timelogger.wear.api.Folder
+import com.timelogger.wear.api.NowResult
 import com.timelogger.wear.api.PendingResume
 import com.timelogger.wear.api.QueueOp
 import com.timelogger.wear.api.Task
@@ -46,7 +48,7 @@ class RecordRepository internal constructor(
     private val lock = Any()
     private val store = LocalStore(app)
     @Volatile
-    private var lastTilePullMs = 0L
+    private var lastOkTileNowMs = 0L
 
     init {
         synchronized(lock) { store.load() }
@@ -62,20 +64,63 @@ class RecordRepository internal constructor(
         val future = SettableFuture.create<Void?>()
         tilePullExecutor.execute {
             try {
-                val now = System.currentTimeMillis()
-                if (now - lastTilePullMs < TilePullDebounceMs) return@execute
-                try {
-                    flushThenPull()
-                } catch (_: Exception) {
-                    pingTile()
-                } finally {
-                    lastTilePullMs = System.currentTimeMillis()
-                }
+                pullNowForTile()
+                pingTile()
+            } catch (_: Exception) {
+                pingTile()
             } finally {
                 future.set(null)
             }
         }
         return future
+    }
+
+    fun tileLayoutAfterNow(build: () -> Tile): ListenableFuture<Tile> {
+        val future = SettableFuture.create<Tile>()
+        tilePullExecutor.execute {
+            try {
+                pullNowForTile()
+            } catch (_: Exception) {
+            } finally {
+                future.set(build())
+            }
+        }
+        return future
+    }
+
+    private fun pullNowForTile() {
+        val now = System.currentTimeMillis()
+        if (now - lastOkTileNowMs in 0 until 5_000L) return
+        applyNowToStore(api.fetchNowForTile())
+        lastOkTileNowMs = System.currentTimeMillis()
+    }
+
+    private fun applyNowToStore(now: NowResult) {
+        synchronized(lock) {
+            var next = store.events
+            val current = now.current
+            val last = now.last
+            if (current != null) {
+                next = next.filter { it.id != current.id }.map { ev ->
+                    if (ev.endedAt == null) ev.copy(endedAt = current.startedAt) else ev
+                } + current
+            } else if (last != null) {
+                next = next.map { ev ->
+                    when {
+                        ev.id == last.id -> last
+                        ev.endedAt == null -> ev.copy(endedAt = last.endedAt ?: last.startedAt)
+                        else -> ev
+                    }
+                }
+                if (next.none { it.id == last.id }) next = next + last
+            } else {
+                val end = ApiTime.iso(Instant.now())
+                next = next.map { ev ->
+                    if (ev.endedAt == null) ev.copy(endedAt = end) else ev
+                }
+            }
+            store.setEvents(next)
+        }
     }
 
     fun scheduleFlush() {
@@ -648,7 +693,6 @@ class RecordRepository internal constructor(
 
     companion object {
         private const val FLUSH_WORK = "tl-flush"
-        private const val TilePullDebounceMs = 8_000L
         private val tokyo = ZoneId.of("Asia/Tokyo")
         private val tilePullExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
             Thread(r, "tl-tile-pull").apply { isDaemon = true }

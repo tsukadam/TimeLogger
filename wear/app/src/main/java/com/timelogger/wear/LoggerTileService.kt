@@ -41,10 +41,13 @@ abstract class LoggerTiles : TileService() {
     protected abstract val tileTitle: String
 
     override fun onTileRequest(requestParams: RequestBuilders.TileRequest): ListenableFuture<Tile> {
-        if (requestParams.currentState.lastClickableId.isEmpty()) {
-            RecordRepository.get(this).pullWhenTileVisible()
+        val clicked = requestParams.currentState.lastClickableId
+        if (clicked.startsWith(IdTask)) {
+            return Futures.immediateFuture(buildLoggerTile(this, requestParams, tilePage, tileTitle))
         }
-        return Futures.immediateFuture(buildLoggerTile(this, requestParams, tilePage, tileTitle))
+        return RecordRepository.get(this).tileLayoutAfterNow {
+            buildLoggerTile(this, requestParams, tilePage, tileTitle)
+        }
     }
 
     override fun onRecentInteractionEventsAsync(
@@ -82,7 +85,7 @@ internal val LoggerTileServices = listOf(
 )
 
 private const val TileRes = "1"
-private const val TileFreshMs = 30L * 60L * 1000L
+private const val TileFreshMs = 30L * 1000L
 private const val IdTask = "t:"
 private const val TitleMinDp = 225
 private const val UnderlineH = 3.5f
