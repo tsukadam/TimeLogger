@@ -6,4 +6,6 @@
     <string name="tile_description">よく使う項目を開始</string>
     <string name="tile2_name">TimeLogger 2</string>
     <string name="tile2_description">7〜12位の項目を開始</string>
+    <string name="tile3_name">TimeLogger 3</string>
+    <string name="tile3_description">13〜18位の項目を開始</string>
 </resources>

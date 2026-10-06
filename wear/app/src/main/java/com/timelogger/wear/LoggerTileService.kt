@@ -77,9 +77,15 @@ class LoggerMoreTileService : LoggerTiles() {
     override val tileTitle = "TimeLogger 2"
 }
 
+class LoggerThirdTileService : LoggerTiles() {
+    override val tilePage = 2
+    override val tileTitle = "TimeLogger 3"
+}
+
 internal val LoggerTileServices = listOf(
     LoggerTileService::class.java,
     LoggerMoreTileService::class.java,
+    LoggerThirdTileService::class.java,
 )
 
 private const val TileRes = "1"
@@ -122,7 +128,7 @@ internal fun buildLoggerTile(
         skip = page * TilePageSize,
         limit = TilePageSize,
     )
-    val empty = if (page == 0) "14日の記録がありません" else "7位以下の記録がありません"
+    val empty = tileEmptyMessage(page)
     return Tile.Builder()
         .setResourcesVersion(TileRes)
         .setFreshnessIntervalMillis(TileFreshMs)
@@ -139,6 +145,11 @@ internal fun buildLoggerTile(
             ),
         )
         .build()
+}
+
+private fun tileEmptyMessage(page: Int): String = when (page) {
+    0 -> "14日の記録がありません"
+    else -> "${page * TilePageSize + 1}位以下の記録がありません"
 }
 
 private fun loggerTileLayout(

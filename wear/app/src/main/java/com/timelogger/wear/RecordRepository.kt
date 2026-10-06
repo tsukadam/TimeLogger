@@ -517,13 +517,6 @@ class RecordRepository internal constructor(
         } catch (e: ApiException) {
             Log.w(RECORD_TAG, "merge ${e.status} ${e.message}")
             noteRemote("merge fail", batch.first().eventId, e)
-            if (e.status == 400 && (e.message?.contains("重複") == true)) {
-                synchronized(lock) {
-                    store.dropFlushed(batch.size)
-                    store.setPendingResume(null)
-                }
-                return
-            }
             if (e.status in 400..499 && e.status != 408) {
                 flushOpsOneByOne(batch)
                 return

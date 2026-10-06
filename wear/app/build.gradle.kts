@@ -29,8 +29,8 @@ android {
         applicationId = "com.timelogger.wear"
         minSdk = 30
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 3
+        versionName = "0.1.2"
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
     }
 
