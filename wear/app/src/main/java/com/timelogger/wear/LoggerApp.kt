@@ -796,8 +796,15 @@ private fun EventEditScreen(
                 picker = null
                 if (picked != null) {
                     when (picked.first) {
-                        ClockField.Start -> startIso = replaceClock(startIso, picked.second)
-                        ClockField.End -> endIso = replaceClock(endIso, picked.second)
+                        ClockField.Start -> {
+                            val endAnchor = if (recording || endIso.isEmpty()) {
+                                ApiTime.iso(Instant.now())
+                            } else {
+                                endIso
+                            }
+                            startIso = replaceStartClock(endAnchor, picked.second)
+                        }
+                        ClockField.End -> endIso = replaceEndClock(startIso, picked.second)
                     }
                 }
             },
@@ -829,7 +836,7 @@ private fun EventEditScreen(
         OverlayPage(
             visible = pickFolder,
             onGone = { setNested(folder = false, folderId = null) },
-        ) { _ ->
+        ) { dismissFolders ->
             val foldersState = rememberTransformingLazyColumnState()
             Box(
                 modifier = Modifier
@@ -850,11 +857,19 @@ private fun EventEditScreen(
                             onClick = { pickFolderId = folder.id },
                         )
                     }
+                    repeat(2) { i ->
+                        item(key = "pre-back-$i") {
+                            Spacer(Modifier.height(0.dp))
+                        }
+                    }
+                    item(key = "back") {
+                        BackEdgeButton(onClick = { if (pickFolderId == null) dismissFolders() })
+                    }
                 }
                 OverlayPage(
                     visible = pickFolderId != null,
                     onGone = { pickFolderId = null },
-                ) { _ ->
+                ) { dismissTasks ->
                     val fid = pickFolderId
                     val folder = fid?.let { controller.folder(it) }
                     val tasks = fid?.let { controller.tasksIn(it) }.orEmpty()
@@ -880,6 +895,14 @@ private fun EventEditScreen(
                                     draftTaskColor = task.color
                                     setNested(folder = false, folderId = null)
                                 }
+                            }
+                            repeat(2) { i ->
+                                item(key = "pre-back-$i") {
+                                    Spacer(Modifier.height(0.dp))
+                                }
+                            }
+                            item(key = "back") {
+                                BackEdgeButton(onClick = dismissTasks)
                             }
                         }
                     }
