@@ -15,6 +15,7 @@ import androidx.work.BackoffPolicy
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.timelogger.wear.api.ApiException
@@ -98,14 +99,12 @@ object ExerciseSync {
         Handler(Looper.getMainLooper()).post(cb)
     }
 
-    /** 手動の開始・停止・編集。ヘルス起点のセッションと睡眠待ちを捨て、直前復帰しない。 */
+    /**
+     * ロガーで項目を押した／止めた／編集したとき。
+     * 直前だけなしにする。A/B のタイマーは止めない。指紋も残す。
+     */
     fun dropHsSession(context: Context) {
-        val app = context.applicationContext
-        val store = ExerciseSyncStore(app)
-        cancelPendingSleepOn(app, store)
-        store.clearPendingSleepOff()
-        cancelSleepConfirm(app)
-        store.clearSession(store.lastFingerprint().orEmpty())
+        ExerciseSyncStore(context.applicationContext).forgetResume()
     }
 
     internal fun process(
@@ -113,21 +112,43 @@ object ExerciseSync {
         store: ExerciseSyncStore,
         signal: ExerciseSignal,
     ) {
+        fireDueSleepTimers(context, store)
         if (store.lastFingerprint() == signal.fingerprint) return
         when (signal.state) {
             "EXERCISE" -> onExercise(context, store, signal)
             "ASLEEP" -> onAsleep(context, store, signal)
-            "PASSIVE" -> onIdle(context, store, signal)
+            "PASSIVE" -> onPassive(context, store, signal)
             else -> store.setLastFingerprint(signal.fingerprint)
         }
     }
 
-    internal fun confirmSleepWait(context: Context) {
+    /** Doze で遅れた A/B タイマーを、次の信号の前に発火させる。 */
+    internal fun fireDueSleepTimers(context: Context, store: ExerciseSyncStore) {
+        val now = System.currentTimeMillis()
+        val onAt = store.pendingSleepOnAt()
+        if (onAt != null && isSleepTimerDue(onAt, now)) {
+            Log.i(EXERCISE_SYNC_TAG, "A timer due ${(now - onAt) / 1000}s")
+            confirmSleepTimer(context)
+            return
+        }
+        val offAt = store.pendingSleepOffAt()
+        if (offAt != null && isSleepTimerDue(offAt, now)) {
+            Log.i(EXERCISE_SYNC_TAG, "B timer due ${(now - offAt) / 1000}s")
+            confirmSleepTimer(context)
+        }
+    }
+
+    internal fun confirmSleepTimer(context: Context) {
         val app = context.applicationContext
         val store = ExerciseSyncStore(app)
+        val last = store.lastHsState()
         val onAt = store.pendingSleepOnAt()
         if (onAt != null) {
             store.clearPendingSleepOn()
+            if (last != "ASLEEP") {
+                Log.i(EXERCISE_SYNC_TAG, "A: timer fired, state=$last, skip sleep")
+                return
+            }
             try {
                 val taskId = ExerciseBindingsStore.get(app).taskIdFor(ExerciseTypes.SLEEP_ID)
                 if (taskId != null) {
@@ -151,6 +172,10 @@ object ExerciseSync {
         }
         val offAt = store.pendingSleepOffAt() ?: return
         store.clearPendingSleepOff()
+        if (last == "ASLEEP") {
+            Log.i(EXERCISE_SYNC_TAG, "B: timer fired, still ASLEEP")
+            return
+        }
         try {
             stopSession(app, store, offAt)
         } catch (e: ApiException) {
@@ -166,13 +191,9 @@ object ExerciseSync {
         store: ExerciseSyncStore,
         signal: ExerciseSignal,
     ) {
-        cancelPendingSleepOn(context, store)
-        if (store.pendingSleepOffAt() != null) {
-            val offAt = store.pendingSleepOffAt()!!
-            store.clearPendingSleepOff()
-            cancelSleepConfirm(context)
-            stopSession(context, store, offAt)
-        } else if (store.sessionKind() == KIND_SLEEP) {
+        cancelSleepEnter(context, store)
+        cancelSleepLeave(context, store)
+        if (store.sessionKind() == KIND_SLEEP) {
             stopSession(context, store, signal.atMs)
         }
         val taskId = ExerciseBindingsStore.get(context).taskIdFor(signal.typeName)
@@ -188,10 +209,7 @@ object ExerciseSync {
         store: ExerciseSyncStore,
         signal: ExerciseSignal,
     ) {
-        if (store.pendingSleepOffAt() != null) {
-            store.clearPendingSleepOff()
-            cancelSleepConfirm(context)
-        }
+        cancelSleepLeave(context, store)
         if (store.sessionKind() == KIND_SLEEP || store.pendingSleepOnAt() != null) {
             store.setLastFingerprint(signal.fingerprint)
             return
@@ -199,6 +217,7 @@ object ExerciseSync {
         store.setPendingSleepOn(signal.atMs)
         store.setLastFingerprint(signal.fingerprint)
         scheduleSleepConfirm(context, SLEEP_WAIT_MS)
+        Log.i(EXERCISE_SYNC_TAG, "A: sleep-enter timer")
     }
 
     private fun onStart(
@@ -215,18 +234,21 @@ object ExerciseSync {
         notifyUi()
     }
 
-    private fun onIdle(
+    private fun onPassive(
         context: Context,
         store: ExerciseSyncStore,
         signal: ExerciseSignal,
     ) {
-        if (store.pendingSleepOnAt() != null) {
-            cancelPendingSleepOn(context, store)
+        val onAt = store.pendingSleepOnAt()
+        if (onAt != null && !isSleepTimerDue(onAt)) {
+            Log.i(EXERCISE_SYNC_TAG, "A: abort sleep-enter")
+            cancelSleepEnter(context, store)
         }
         if (store.sessionKind() == KIND_SLEEP) {
             if (store.pendingSleepOffAt() == null) {
                 store.setPendingSleepOff(signal.atMs)
                 scheduleSleepConfirm(context, SLEEP_WAIT_MS)
+                Log.i(EXERCISE_SYNC_TAG, "B: sleep-leave timer")
             }
             store.setLastFingerprint(signal.fingerprint)
             return
@@ -262,20 +284,36 @@ object ExerciseSync {
         notifyUi()
     }
 
-    private fun cancelPendingSleepOn(context: Context, store: ExerciseSyncStore) {
+    private fun cancelSleepEnter(context: Context, store: ExerciseSyncStore) {
         if (store.pendingSleepOnAt() == null) return
         store.clearPendingSleepOn()
         cancelSleepConfirm(context)
     }
 
+    private fun cancelSleepLeave(context: Context, store: ExerciseSyncStore) {
+        if (store.pendingSleepOffAt() == null) return
+        store.clearPendingSleepOff()
+        cancelSleepConfirm(context)
+    }
+
+    private fun isSleepTimerDue(atMs: Long, nowMs: Long = System.currentTimeMillis()): Boolean =
+        nowMs - atMs >= SLEEP_WAIT_MS
+
     private fun scheduleSleepConfirm(context: Context, delayMs: Long) {
+        val delay = delayMs.coerceAtLeast(0L)
+        val request = OneTimeWorkRequestBuilder<SleepConfirmWorker>()
+            .setInitialDelay(delay, TimeUnit.MILLISECONDS)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)
+            .apply {
+                if (delay == 0L) {
+                    setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+                }
+            }
+            .build()
         WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
             SLEEP_CONFIRM_WORK,
             ExistingWorkPolicy.REPLACE,
-            OneTimeWorkRequestBuilder<SleepConfirmWorker>()
-                .setInitialDelay(delayMs.coerceAtLeast(0L), TimeUnit.MILLISECONDS)
-                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)
-                .build(),
+            request,
         )
     }
 
@@ -343,6 +381,18 @@ internal class ExerciseSyncStore(context: Context) {
 
     fun lastFingerprint(): String? = synchronized(lock) {
         prefs.getString(KEY_FP, null)
+    }
+
+    fun lastHsState(): String? = lastFingerprint()?.substringBefore("|")?.takeIf { it.isNotEmpty() }
+
+    fun forgetResume() {
+        synchronized(lock) {
+            prefs.edit()
+                .remove(KEY_PREV)
+                .remove(KEY_EVENT)
+                .remove(KEY_KIND)
+                .commit()
+        }
     }
 
     fun setLastFingerprint(value: String) {
@@ -442,6 +492,15 @@ class ExerciseSyncWorker(
 ) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val store = ExerciseSyncStore(applicationContext)
+        try {
+            ExerciseSync.fireDueSleepTimers(applicationContext, store)
+        } catch (e: ApiException) {
+            Log.e(EXERCISE_SYNC_TAG, "api ${e.status} ${e.message}")
+            if (e.status == -1 || e.status >= 500) return Result.retry()
+        } catch (e: Exception) {
+            Log.e(EXERCISE_SYNC_TAG, "sync failed", e)
+            return Result.retry()
+        }
         while (true) {
             val signal = store.peek() ?: break
             try {
@@ -471,7 +530,7 @@ class SleepConfirmWorker(
 ) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         return try {
-            ExerciseSync.confirmSleepWait(applicationContext)
+            ExerciseSync.confirmSleepTimer(applicationContext)
             RecordRepository.get(applicationContext).flushThenPull()
             Result.success()
         } catch (e: ApiException) {
