@@ -100,17 +100,21 @@ internal object ExerciseTypes {
     }
 
     const val SLEEP_ID = "SLEEP"
+    const val SLEEP_PREP_ID = "SLEEP_PREP"
 
     val sleep = ExerciseTypeChoice(SLEEP_ID, "睡眠")
+    val sleepPrep = ExerciseTypeChoice(SLEEP_PREP_ID, "睡眠準備")
 
     fun bindList(linkedId: String?): List<ExerciseTypeChoice> {
+        val extras = listOf(sleep, sleepPrep)
         val bound = when (linkedId) {
             null -> emptyList()
             SLEEP_ID -> listOf(sleep)
+            SLEEP_PREP_ID -> listOf(sleepPrep)
             else -> picker.filter { it.id == linkedId }
         }
-        val unboundSleep = if (linkedId == SLEEP_ID) emptyList() else listOf(sleep)
+        val unboundExtras = extras.filter { it.id != linkedId }
         val unboundRest = picker.filter { it.id != linkedId }
-        return bound + unboundSleep + unboundRest
+        return bound + unboundExtras + unboundRest
     }
 }

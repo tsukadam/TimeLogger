@@ -501,6 +501,10 @@ class RecordRepository internal constructor(
         noteRemote("delete ok", op.eventId, null)
     }
 
+    fun noteHs(message: String, detail: JSONObject) {
+        runCatching { api.debug(message, detail) }
+    }
+
     private fun noteRemote(message: String, eventId: String, err: ApiException?) {
         val detail = JSONObject().put("eventId", eventId)
         if (err != null) {

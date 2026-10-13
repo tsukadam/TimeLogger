@@ -3,6 +3,9 @@
 -keep class com.timelogger.wear.LoggerMoreTileService
 -keep class com.timelogger.wear.LoggerThirdTileService
 -keep class com.timelogger.wear.ExerciseSyncService
+-keep class com.timelogger.wear.ExerciseSyncWorker
+-keep class com.timelogger.wear.SleepTimerWorker
+-keep class com.timelogger.wear.RegisterPassiveListenerWorker
 -keep class androidx.wear.tiles.** { *; }
 -keep class androidx.wear.protolayout.** { *; }
 -keep class androidx.health.services.** { *; }
