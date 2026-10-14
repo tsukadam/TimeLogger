@@ -25,6 +25,9 @@ class ExerciseBindingsStore private constructor(context: Context) {
 
     fun linkedTaskIds(): Set<String> = typeToTask.values.toSet()
 
+    fun tileHiddenTaskIds(): Set<String> =
+        typeToTask.filterKeys { it != ExerciseTypes.SLEEP_PREP_ID }.values.toSet()
+
     fun bind(taskId: String, typeName: String) {
         val next = typeToTask
             .filter { it.key != typeName && it.value != taskId }

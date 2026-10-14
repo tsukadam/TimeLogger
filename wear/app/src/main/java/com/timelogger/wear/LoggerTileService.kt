@@ -119,7 +119,7 @@ internal fun buildLoggerTile(
         }
     }
     val snap = RecordRepository.get(context).snapshot()
-    val linkedIds = ExerciseBindingsStore.get(context).linkedTaskIds()
+    val linkedIds = ExerciseBindingsStore.get(context).tileHiddenTaskIds()
     val tasks = topTasksByCount(
         tasks = snap.tasks,
         events = snap.events,
