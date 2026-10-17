@@ -513,11 +513,20 @@ class RecordRepository internal constructor(
         runCatching { api.debug(message, detail) }
     }
 
+    private fun mergeQueue(ops: List<QueueOp>): CommandWrite {
+        val bindings = ExerciseBindingsStore.get(app)
+        return api.mergeQueue(
+            ops,
+            sleepTaskId = bindings.taskIdFor(ExerciseTypes.SLEEP_ID),
+            sleepPrepTaskId = bindings.taskIdFor(ExerciseTypes.SLEEP_PREP_ID),
+        )
+    }
+
     private fun flushStartStopPrefix(ops: List<QueueOp>) {
         val batch = ops.takeWhile { it.op != "edit" && it.op != "delete" && it.op != "update" }
         if (batch.isEmpty()) return
         val result = try {
-            api.mergeQueue(batch)
+            mergeQueue(batch)
         } catch (e: ApiException) {
             Log.w(RECORD_TAG, "merge ${e.status} ${e.message}")
             noteRemote("merge fail", batch.first().eventId, e)
@@ -548,7 +557,7 @@ class RecordRepository internal constructor(
             val resumeId = newWatchEventId()
             try {
                 ingest(
-                    api.mergeQueue(
+                    mergeQueue(
                         listOf(
                             QueueOp(
                                 op = "start",

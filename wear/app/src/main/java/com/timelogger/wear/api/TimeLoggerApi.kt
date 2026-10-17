@@ -109,7 +109,11 @@ class TimeLoggerApi(
         request("POST", "debug", body)
     }
 
-    fun mergeQueue(ops: List<QueueOp>): CommandWrite {
+    fun mergeQueue(
+        ops: List<QueueOp>,
+        sleepTaskId: String? = null,
+        sleepPrepTaskId: String? = null,
+    ): CommandWrite {
         val arr = JSONArray()
         for (op in ops) {
             val o = JSONObject()
@@ -119,7 +123,10 @@ class TimeLoggerApi(
             if (op.op == "start") o.put("taskId", op.taskId)
             arr.put(o)
         }
-        return parseWrite(request("POST", "merge-queue", JSONObject().put("ops", arr)))
+        val body = JSONObject().put("ops", arr)
+        if (!sleepTaskId.isNullOrEmpty()) body.put("sleepTaskId", sleepTaskId)
+        if (!sleepPrepTaskId.isNullOrEmpty()) body.put("sleepPrepTaskId", sleepPrepTaskId)
+        return parseWrite(request("POST", "merge-queue", body))
     }
 
     private fun parseWrite(json: JSONObject): CommandWrite {

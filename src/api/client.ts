@@ -360,6 +360,8 @@ export function postMergeQueue(body: {
     | { op: 'start'; taskId: string; at: string; eventId: string }
     | { op: 'stop'; eventId: string; at: string }
   >
+  sleepTaskId?: string
+  sleepPrepTaskId?: string
 }): Promise<CommandWriteResult> {
   return postCommand('merge-queue', body)
 }

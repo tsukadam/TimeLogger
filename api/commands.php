@@ -595,6 +595,17 @@ function optionalWatchEventId(array $body): ?string
     return requireWatchEventId($body['eventId']);
 }
 
+function optionalTaskId(mixed $value, string $field): ?string
+{
+    if ($value === null || $value === '') {
+        return null;
+    }
+    if (!is_string($value)) {
+        fail(400, $field . ' が不正です');
+    }
+    return $value;
+}
+
 /** @param array<string, mixed> $ev */
 function eventStartMs(array $ev): int
 {
@@ -1503,15 +1514,39 @@ function canonEventToSegment(array $ev, int $nowMs): array
 }
 
 /**
+ * キューの睡眠は、本体の入眠準備には負けない。入眠準備は載せず睡眠を続ける。
+ * 休憩など他は後発開始のまま。
+ */
+function queuedSleepBeatsPrep(
+    ?string $sleepTaskId,
+    ?string $sleepPrepTaskId,
+    array $winner,
+    array $incoming,
+): bool {
+    if ($sleepTaskId === null || $sleepTaskId === '' || $sleepPrepTaskId === null || $sleepPrepTaskId === '') {
+        return false;
+    }
+    if (($winner['source'] ?? '') !== 'queue' || ($winner['taskId'] ?? '') !== $sleepTaskId) {
+        return false;
+    }
+    return ($incoming['source'] ?? '') === 'canon' && ($incoming['taskId'] ?? '') === $sleepPrepTaskId;
+}
+
+/**
  * 接点だけで後発開始が勝つ。負けた側の残りは穴（再開しない）。
  * 同じ側の連続した区間は、そのまま載せる。
+ * sleepTaskId / sleepPrepTaskId があるとき、キューの睡眠は本体の入眠準備に負けない。
  *
  * @param list<array<string, mixed>> $canonSegs
  * @param list<array<string, mixed>> $queueSegs
  * @return array{pieces: list<array<string, mixed>>, skipped: list<array{eventId: string, at: string}>}
  */
-function mergeLaterStartWins(array $canonSegs, array $queueSegs): array
-{
+function mergeLaterStartWins(
+    array $canonSegs,
+    array $queueSegs,
+    ?string $sleepTaskId = null,
+    ?string $sleepPrepTaskId = null,
+): array {
     $all = array_merge($canonSegs, $queueSegs);
     usort($all, static function (array $a, array $b): int {
         if ($a['startMs'] !== $b['startMs']) {
@@ -1572,6 +1607,9 @@ function mergeLaterStartWins(array $canonSegs, array $queueSegs): array
         $later = $seg['startMs'] > $winner['startMs']
             || ($seg['startMs'] === $winner['startMs'] && ($seg['source'] ?? '') === 'queue');
         if ($later) {
+            if (queuedSleepBeatsPrep($sleepTaskId, $sleepPrepTaskId, $winner, $seg)) {
+                continue;
+            }
             $closeWinner($t, $tIso, false);
             $winner = $seg;
             $winner['winFromMs'] = $seg['startMs'];
@@ -1609,6 +1647,8 @@ function handleMergeQueue(string $dataDir): void
     $chunks = loadChunks($dataDir, $index['chunks'], $stamp);
     $events = allEvents($chunks);
     $queueSegs = queueOpsToSegments($ops, $events, $nowMs);
+    $sleepTaskId = optionalTaskId($body['sleepTaskId'] ?? null, 'sleepTaskId');
+    $sleepPrepTaskId = optionalTaskId($body['sleepPrepTaskId'] ?? null, 'sleepPrepTaskId');
 
     foreach ($queueSegs as $seg) {
         findTaskAndFolder($tasks, $seg['taskId']);
@@ -1632,7 +1672,7 @@ function handleMergeQueue(string $dataDir): void
         }
     }
 
-    $merged = mergeLaterStartWins($involved, $queueSegs);
+    $merged = mergeLaterStartWins($involved, $queueSegs, $sleepTaskId, $sleepPrepTaskId);
     $out = $kept;
     foreach ($merged['pieces'] as $piece) {
         $seg = $piece['seg'];
