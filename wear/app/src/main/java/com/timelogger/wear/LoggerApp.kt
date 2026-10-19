@@ -112,6 +112,8 @@ private val RunningBorder = Color(0xFF5BB98C)
 private val LinkGreen = Color(0xFF4DFF7A)
 private val BackBg = Color(0xFFD7E3F4)
 private val BackText = Color(0xFF1C1C1E)
+private val DoneBg = Color(0xFF1E4A38)
+private val DoneText = Color(0xFF8FE0B4)
 private val DeleteBg = Color(0xFF5C2B30)
 private val DeleteText = Color(0xFFF2B4B4)
 private val PillHeight = 54.dp
@@ -154,10 +156,13 @@ fun TimeLoggerWearApp(
                         controller = controller,
                         edge = edge,
                         listState = folderListState,
-                        frozen = folderId != null || activityOpen || viewOpen,
+                        frozen = folderId != null || activityOpen || viewOpen || eventForm != null,
                         onOpenFolder = { folderId = it },
                         onOpenActivity = { activityOpen = true },
                         onOpenView = { viewOpen = true },
+                        onOpenCurrent = {
+                            controller.current?.let { eventForm = eventFormOf(it) }
+                        },
                     )
                 }
                 OverlayPage(
@@ -253,6 +258,7 @@ private fun FolderScreen(
     onOpenFolder: (String) -> Unit,
     onOpenActivity: () -> Unit,
     onOpenView: () -> Unit,
+    onOpenCurrent: () -> Unit,
 ) {
     val folders = remember { mutableStateOf(controller.folders) }
     val current = remember { mutableStateOf(controller.current) }
@@ -280,6 +286,9 @@ private fun FolderScreen(
                 current = current.value,
                 listState = listState,
                 spec = FolderHeaderFx,
+                onClick = {
+                    if (!frozen && current.value != null) onOpenCurrent()
+                },
             )
         }
         items(folders.value, key = { it.id }) { folder ->
@@ -742,13 +751,41 @@ private fun EventEditScreen(
                     )
                 }
             }
+            if (recording) {
+                item(key = "done") {
+                    EdgePill(
+                        running = false,
+                        fill = DoneBg,
+                        hInset = 32.dp,
+                        modifier = Modifier
+                            .padding(top = RowGap * 2)
+                            .graphicsLayer { alpha = if (busy || timeInvalid) 0.38f else 1f },
+                        onClick = {
+                            if (busy || timeInvalid) return@EdgePill
+                            if (controller.finishCurrent(form.eventId!!, startIso, draftTaskId)) {
+                                view.tapHaptic(TapHaptic.Click)
+                                saving = true
+                            }
+                        },
+                    ) {
+                        Text(
+                            text = "DONE",
+                            color = DoneText,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
             if (form.eventId != null) {
                 item(key = "delete") {
                     EdgePill(
                         running = false,
                         fill = DeleteBg,
                         hInset = 32.dp,
-                        modifier = Modifier.padding(top = RowGap * 2),
+                        modifier = Modifier.padding(top = if (recording) 0.dp else RowGap * 2),
                         onClick = {
                             if (!busy) {
                                 view.tapHaptic(TapHaptic.Click)
@@ -1044,10 +1081,12 @@ private fun RecordingHeader(
     current: Event?,
     listState: TransformingLazyColumnState,
     spec: HeaderFxSpec,
+    onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val cache = remember { HeaderFxCache() }
     val headerH = with(LocalDensity.current) { spec.height.toPx() }
+    val view = LocalView.current
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -1060,22 +1099,41 @@ private fun RecordingHeader(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (current != null) {
-            ElapsedLabel(current.startedAt, fontSize = 12.sp)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(parseComposeColor(current.taskColor)),
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = current.taskName,
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            val open = onClick
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (open != null) {
+                            Modifier.clickQuiet(
+                                onClick = {
+                                    view.tapHaptic(TapHaptic.Click)
+                                    open()
+                                },
+                            )
+                        } else {
+                            Modifier
+                        },
+                    ),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                ElapsedLabel(current.startedAt, fontSize = 12.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(parseComposeColor(current.taskColor)),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = current.taskName,
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
         Spacer(Modifier.height(RowGap))

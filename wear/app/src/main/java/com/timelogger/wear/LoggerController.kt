@@ -86,8 +86,8 @@ class LoggerController(
 
     fun onTask(taskId: String): Boolean {
         if (busy) return false
-        if (current?.taskId == taskId) stopCurrent()
-        else startTask(taskId)
+        if (current?.taskId == taskId) return stopCurrent()
+        startTask(taskId)
         return true
     }
 
@@ -122,9 +122,21 @@ class LoggerController(
         runWrite(taskId) { repo.startTask(taskId) }
     }
 
-    private fun stopCurrent() {
-        val taskId = current?.taskId ?: return
+    fun stopCurrent(): Boolean {
+        if (busy) return false
+        val taskId = current?.taskId ?: return false
         runWrite(taskId) { repo.stopCurrent() }
+        return true
+    }
+
+    fun finishCurrent(eventId: String, startedAt: String, taskId: String): Boolean {
+        if (busy) return false
+        if (current?.id != eventId) return false
+        runWrite(eventId) {
+            repo.updateOpenEvent(eventId, startedAt, taskId)
+            repo.stopCurrent()
+        }
+        return true
     }
 
     private fun runWrite(taskId: String, block: () -> Unit) {
