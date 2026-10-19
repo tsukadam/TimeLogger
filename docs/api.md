@@ -84,7 +84,8 @@ Body:
 {
   "ops": [
     { "op": "start", "taskId": "…", "at": "ISO", "eventId": "…w" },
-    { "op": "stop", "eventId": "…", "at": "ISO" }
+    { "op": "stop", "eventId": "…", "at": "ISO" },
+    { "op": "state", "state": "ASLEEP|PASSIVE", "at": "ISO", "eventId": "…w" }
   ],
   "sleepTaskId?": "…",
   "sleepPrepTaskId?": "…"
@@ -94,9 +95,10 @@ Body:
 本体ログとキュー一時ログのマージ。触れる箇所だけ書き直す。各線の内側は流し直さない。`start` を順に叩くのではない。
 
 - `ops` は 1 件以上、上限 256。空や上限超えは 400
-- `op` は `start` | `stop` だけ
+- `op` は `start` | `stop` | `state`
 - 開始は `taskId` `at` `eventId` すべて必須。`eventId` は末尾 `w`
 - 終了は `eventId` `at` 必須
+- `state` は `ASLEEP` | `PASSIVE`。`at` と `eventId`（末尾 `w`）必須。`taskId` は付けない。ログの行には残らない。`ASLEEP` は覆う行が入眠準備なら睡眠開始、`PASSIVE` は覆う行が睡眠なら入眠準備開始。でなければ何もしない。`start`/`stop` の一本線には混ぜない。`state` があるとき `sleepTaskId` と `sleepPrepTaskId` は必須
 - `commands.lock` を握ったまま 1 リクエストで終える
 - 成功の戻りに `skipped`（409 で飛ばした終了）を足す。1 件の 409 で全体は落とさない
 - 開始の 400/404 は全体失敗。無い終了 id は 404 で全体失敗

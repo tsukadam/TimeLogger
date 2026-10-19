@@ -22,8 +22,8 @@
  * POST /api/index.php?resource=signal-stop
  *      Body: { eventId, at, resumeTaskId? } — 指定行を閉じ、任意で直前タスクを at から上書き開始
  * POST /api/index.php?resource=merge-queue
- *      Body: { ops: [{op:start|stop,...}], sleepTaskId?, sleepPrepTaskId? }
- *      本体とキューが触れる箇所だけマージ。睡眠は入眠準備に負けない
+ *      Body: { ops: [{op:start|stop|state,...}], sleepTaskId?, sleepPrepTaskId? }
+ *      本体とキューが触れる箇所だけマージ。state は覆う行を見て睡眠の入り／抜け
  * POST /api/index.php?resource=stop
  *      Body: { at?, eventId? } — まだ開いている自分だけを閉じる。既に閉じていたら 409
  * POST /api/index.php?resource=overwrite

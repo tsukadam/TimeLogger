@@ -94,6 +94,7 @@ internal class LocalStore(context: Context) {
                     openId = op.eventId
                     out.add(op)
                 }
+                "state" -> out.add(op)
                 "edit", "update" -> out.add(op)
                 "delete" -> {
                     if (openId == op.eventId) openId = null
@@ -228,6 +229,7 @@ internal class LocalStore(context: Context) {
                         taskId = o.optString("taskId").takeIf { it.isNotEmpty() },
                         startedAt = o.optString("startedAt").takeIf { it.isNotEmpty() },
                         endedAt = o.optString("endedAt").takeIf { it.isNotEmpty() },
+                        state = o.optString("state").takeIf { it.isNotEmpty() },
                     ),
                 )
             }
@@ -254,6 +256,7 @@ internal class LocalStore(context: Context) {
             if (op.taskId != null) o.put("taskId", op.taskId)
             if (op.startedAt != null) o.put("startedAt", op.startedAt)
             if (op.endedAt != null) o.put("endedAt", op.endedAt)
+            if (op.state != null) o.put("state", op.state)
             arr.put(o)
         }
         val json = JSONObject().put("ops", arr)

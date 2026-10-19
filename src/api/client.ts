@@ -359,6 +359,7 @@ export function postMergeQueue(body: {
   ops: Array<
     | { op: 'start'; taskId: string; at: string; eventId: string }
     | { op: 'stop'; eventId: string; at: string }
+    | { op: 'state'; state: 'ASLEEP' | 'PASSIVE'; at: string; eventId: string }
   >
   sleepTaskId?: string
   sleepPrepTaskId?: string

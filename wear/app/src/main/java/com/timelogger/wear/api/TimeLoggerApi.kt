@@ -121,6 +121,7 @@ class TimeLoggerApi(
                 .put("at", op.at)
                 .put("eventId", op.eventId)
             if (op.op == "start") o.put("taskId", op.taskId)
+            if (op.op == "state") o.put("state", op.state)
             arr.put(o)
         }
         val body = JSONObject().put("ops", arr)

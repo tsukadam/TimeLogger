@@ -58,6 +58,7 @@ data class QueueOp(
     val taskId: String? = null,
     val startedAt: String? = null,
     val endedAt: String? = null,
+    val state: String? = null,
 )
 
 data class PendingResume(

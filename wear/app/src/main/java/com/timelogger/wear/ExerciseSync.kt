@@ -21,6 +21,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.timelogger.wear.api.ApiException
+import com.timelogger.wear.api.Event
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
@@ -241,23 +242,31 @@ object ExerciseSync {
             timerLog(app, "w", "A fire skip: hs=$last", JSONObject().put("onAt", isoMs(onAt)))
             return
         }
-        if (!currentIsSleepPrep(app)) {
-            timerLog(app, "w", "A fire skip: not sleep-prep", sleepPrepDetail(app).put("onAt", isoMs(onAt)))
+        if (ExerciseBindingsStore.get(app).taskIdFor(ExerciseTypes.SLEEP_ID) == null) {
+            timerLog(app, "e", "A fire: SLEEP unbound", JSONObject().put("onAt", isoMs(onAt)))
             return
         }
-        timerLog(app, "i", "A fire: start sleep", JSONObject().put("onAt", isoMs(onAt)))
-        val taskId = ExerciseBindingsStore.get(app).taskIdFor(ExerciseTypes.SLEEP_ID)
-        if (taskId != null) {
-            onStart(
-                app,
-                store,
-                ExerciseSignal("ASLEEP", onAt, ExerciseTypes.SLEEP_ID),
-                taskId,
+        timerLog(app, "i", "A fire: hs asleep", JSONObject().put("onAt", isoMs(onAt)))
+        RecordRepository.get(app).signalHsState("ASLEEP", onAt)
+    }
+
+    fun adoptServerCurrent(context: Context, current: Event?, last: Event?) {
+        val app = context.applicationContext
+        val sleepId = ExerciseBindingsStore.get(app).taskIdFor(ExerciseTypes.SLEEP_ID) ?: return
+        val store = ExerciseSyncStore(app)
+        if (current?.taskId == sleepId) {
+            store.setSession(
+                last?.taskId,
+                current.id,
+                store.lastFingerprint().orEmpty(),
                 KIND_SLEEP,
             )
-        } else {
-            timerLog(app, "e", "A fire: SLEEP unbound", JSONObject().put("onAt", isoMs(onAt)))
-            stopSession(app, store, onAt)
+            notifyUi()
+            return
+        }
+        if (store.sessionKind() == KIND_SLEEP) {
+            store.clearSession(store.lastFingerprint().orEmpty())
+            notifyUi()
         }
     }
 
@@ -267,17 +276,8 @@ object ExerciseSync {
             timerLog(app, "w", "B fire skip: still ASLEEP", JSONObject().put("offAt", isoMs(offAt)))
             return
         }
-        if (store.sessionKind() != KIND_SLEEP) {
-            timerLog(app, "i", "B fire skip: not in sleep", JSONObject().put("offAt", isoMs(offAt)))
-            return
-        }
-        timerLog(
-            app,
-            "i",
-            "B fire: leave sleep",
-            JSONObject().put("offAt", isoMs(offAt)).put("hs", last ?: JSONObject.NULL),
-        )
-        stopSession(app, store, offAt)
+        timerLog(app, "i", "B fire: hs passive", JSONObject().put("offAt", isoMs(offAt)))
+        RecordRepository.get(app).signalHsState("PASSIVE", offAt)
     }
 
     private fun onExercise(
@@ -362,20 +362,6 @@ object ExerciseSync {
         notifyUi()
     }
 
-    private fun currentIsSleepPrep(context: Context): Boolean {
-        val prepId = ExerciseBindingsStore.get(context).taskIdFor(ExerciseTypes.SLEEP_PREP_ID)
-            ?: return false
-        return RecordRepository.get(context).peekPrevTaskId() == prepId
-    }
-
-    private fun sleepPrepDetail(context: Context): JSONObject {
-        val prepId = ExerciseBindingsStore.get(context).taskIdFor(ExerciseTypes.SLEEP_PREP_ID)
-        val current = RecordRepository.get(context).peekPrevTaskId()
-        return JSONObject()
-            .put("prepTask", prepId ?: JSONObject.NULL)
-            .put("currentTask", current ?: JSONObject.NULL)
-    }
-
     private fun isoMs(ms: Long): String = ApiTime.iso(Instant.ofEpochMilli(ms))
 
     private fun timerLog(context: Context, level: String, message: String, extra: JSONObject) {
@@ -383,6 +369,7 @@ object ExerciseSync {
         extra.put("hs", store.lastHsState() ?: JSONObject.NULL)
             .put("kind", store.sessionKind() ?: JSONObject.NULL)
             .put("timers", store.timerCount())
+        RecordRepository.get(context).lastNowDetail()?.let { extra.put("now", JSONObject(it.toString())) }
         val line = "$message $extra".trim()
         when (level) {
             "e" -> Log.e(EXERCISE_SYNC_TAG, line)

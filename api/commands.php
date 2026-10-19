@@ -1626,34 +1626,68 @@ function mergeLaterStartWins(
     return ['pieces' => $pieces, 'skipped' => $skipped];
 }
 
-function handleMergeQueue(string $dataDir): void
+/**
+ * @param list<mixed> $ops
+ * @return array{0: list<array<string, mixed>>, 1: list<array<string, mixed>>}
+ */
+function partitionQueueOps(array $ops): array
 {
-    $body = readJsonBody(true);
-    $ops = $body['ops'] ?? null;
-    if (!is_array($ops)) {
-        fail(400, 'ops required');
+    $items = [];
+    $states = [];
+    foreach ($ops as $op) {
+        if (!is_array($op)) {
+            fail(400, 'ops が不正です');
+        }
+        $kind = $op['op'] ?? null;
+        if ($kind === 'state') {
+            $states[] = $op;
+        } elseif ($kind === 'start' || $kind === 'stop') {
+            $items[] = $op;
+        } else {
+            fail(400, 'op が不正です');
+        }
     }
-    $n = count($ops);
-    if ($n < 1 || $n > 256) {
-        fail(400, 'ops の件数が不正です');
+    return [$items, $states];
+}
+
+/** @param list<array<string, mixed>> $events */
+function eventCoveringAt(array $events, int $atMs, int $nowMs): ?array
+{
+    $hit = null;
+    $hitStart = -1;
+    foreach ($events as $ev) {
+        if (!is_array($ev)) {
+            continue;
+        }
+        $start = eventStartMs($ev);
+        $open = ($ev['endedAt'] ?? null) === null;
+        $end = $open ? $nowMs : eventEndMsOf($ev, $nowMs);
+        if ($start <= $atMs && $atMs < $end && $start >= $hitStart) {
+            $hit = $ev;
+            $hitStart = $start;
+        }
     }
+    return $hit;
+}
 
-    $now = commandNow();
-    $nowMs = commandMs($now);
-    $stamp = commandIso($now);
-
-    $tasks = loadTasksFile($dataDir);
-    $index = loadEventsIndex($dataDir);
-    $chunks = loadChunks($dataDir, $index['chunks'], $stamp);
-    $events = allEvents($chunks);
-    $queueSegs = queueOpsToSegments($ops, $events, $nowMs);
-    $sleepTaskId = optionalTaskId($body['sleepTaskId'] ?? null, 'sleepTaskId');
-    $sleepPrepTaskId = optionalTaskId($body['sleepPrepTaskId'] ?? null, 'sleepPrepTaskId');
-
-    foreach ($queueSegs as $seg) {
-        findTaskAndFolder($tasks, $seg['taskId']);
+/**
+ * @param list<array<string, mixed>> $events
+ * @param list<array<string, mixed>> $queueSegs
+ * @param array<string, mixed> $tasks
+ * @return array{events: list<array<string, mixed>>, skipped: list<array{eventId: string, at: string}>}
+ */
+function mergeQueueIntoEvents(
+    array $events,
+    array $queueSegs,
+    ?string $sleepTaskId,
+    ?string $sleepPrepTaskId,
+    int $nowMs,
+    string $stamp,
+    array $tasks,
+): array {
+    if ($queueSegs === []) {
+        return ['events' => $events, 'skipped' => []];
     }
-
     $involved = [];
     $kept = [];
     foreach ($events as $ev) {
@@ -1691,9 +1725,138 @@ function handleMergeQueue(string $dataDir): void
         }
         $out[] = $ev;
     }
+    return ['events' => $out, 'skipped' => $merged['skipped']];
+}
 
-    $written = persistEventList($dataDir, $index, $chunks, $out, $stamp);
-    echoCommandWrite($tasks, $index, $chunks, $written, ['skipped' => $merged['skipped']]);
+/**
+ * ASLEEP: 覆う行が入眠準備なら睡眠を開始。PASSIVE: 覆う行が睡眠なら入眠準備を開始。
+ * でなければ線は変えない。
+ *
+ * @param list<array<string, mixed>> $events
+ * @param array<string, mixed> $op
+ * @param array<string, mixed> $tasks
+ * @return array{events: list<array<string, mixed>>, skipped: list<array{eventId: string, at: string}>}
+ */
+function applyHsState(
+    array $events,
+    array $op,
+    string $sleepTaskId,
+    string $sleepPrepTaskId,
+    int $nowMs,
+    string $stamp,
+    array $tasks,
+): array {
+    $state = $op['state'] ?? null;
+    if ($state === 'ASLEEP') {
+        $needId = $sleepPrepTaskId;
+        $startId = $sleepTaskId;
+    } elseif ($state === 'PASSIVE') {
+        $needId = $sleepTaskId;
+        $startId = $sleepPrepTaskId;
+    } else {
+        fail(400, 'state が不正です');
+    }
+    $at = requireAtIso($op['at'] ?? null);
+    $atMs = commandMs($at);
+    $atIso = commandIso($at);
+    $eventId = requireWatchEventId($op['eventId'] ?? null);
+    if (eventsContainId($events, $eventId)) {
+        return ['events' => $events, 'skipped' => []];
+    }
+    $cover = eventCoveringAt($events, $atMs, $nowMs);
+    if ($cover === null || ($cover['taskId'] ?? '') !== $needId) {
+        return ['events' => $events, 'skipped' => []];
+    }
+    $seg = [
+        'source' => 'queue',
+        'eventId' => $eventId,
+        'taskId' => $startId,
+        'startMs' => $atMs,
+        'startIso' => $atIso,
+        'endMs' => $nowMs,
+        'endIso' => null,
+        'open' => true,
+    ];
+    return mergeQueueIntoEvents(
+        $events,
+        [$seg],
+        $sleepTaskId,
+        $sleepPrepTaskId,
+        $nowMs,
+        $stamp,
+        $tasks,
+    );
+}
+
+function handleMergeQueue(string $dataDir): void
+{
+    $body = readJsonBody(true);
+    $ops = $body['ops'] ?? null;
+    if (!is_array($ops)) {
+        fail(400, 'ops required');
+    }
+    $n = count($ops);
+    if ($n < 1 || $n > 256) {
+        fail(400, 'ops の件数が不正です');
+    }
+
+    $now = commandNow();
+    $nowMs = commandMs($now);
+    $stamp = commandIso($now);
+
+    $tasks = loadTasksFile($dataDir);
+    $index = loadEventsIndex($dataDir);
+    $chunks = loadChunks($dataDir, $index['chunks'], $stamp);
+    $events = allEvents($chunks);
+    [$itemOps, $stateOps] = partitionQueueOps($ops);
+    $sleepTaskId = optionalTaskId($body['sleepTaskId'] ?? null, 'sleepTaskId');
+    $sleepPrepTaskId = optionalTaskId($body['sleepPrepTaskId'] ?? null, 'sleepPrepTaskId');
+    $skipped = [];
+
+    if ($itemOps !== []) {
+        $queueSegs = queueOpsToSegments($itemOps, $events, $nowMs);
+        foreach ($queueSegs as $seg) {
+            findTaskAndFolder($tasks, $seg['taskId']);
+        }
+        $merged = mergeQueueIntoEvents(
+            $events,
+            $queueSegs,
+            $sleepTaskId,
+            $sleepPrepTaskId,
+            $nowMs,
+            $stamp,
+            $tasks,
+        );
+        $events = $merged['events'];
+        $skipped = $merged['skipped'];
+    }
+
+    if ($stateOps !== []) {
+        if ($sleepTaskId === null || $sleepTaskId === '' || $sleepPrepTaskId === null || $sleepPrepTaskId === '') {
+            fail(400, 'sleepTaskId と sleepPrepTaskId が必要です');
+        }
+        findTaskAndFolder($tasks, $sleepTaskId);
+        findTaskAndFolder($tasks, $sleepPrepTaskId);
+        usort($stateOps, static function (array $a, array $b): int {
+            return commandMs(requireAtIso($a['at'] ?? null)) <=> commandMs(requireAtIso($b['at'] ?? null));
+        });
+        foreach ($stateOps as $op) {
+            $applied = applyHsState(
+                $events,
+                $op,
+                $sleepTaskId,
+                $sleepPrepTaskId,
+                $nowMs,
+                $stamp,
+                $tasks,
+            );
+            $events = $applied['events'];
+            $skipped = array_merge($skipped, $applied['skipped']);
+        }
+    }
+
+    $written = persistEventList($dataDir, $index, $chunks, $events, $stamp);
+    echoCommandWrite($tasks, $index, $chunks, $written, ['skipped' => $skipped]);
 }
 
 function handleStop(string $dataDir): void

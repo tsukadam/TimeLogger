@@ -46,8 +46,11 @@ class RecordRepository internal constructor(
 ) {
     private val lock = Any()
     private val store = LocalStore(app)
+    private val nowPrefs = app.getSharedPreferences("record_now", Context.MODE_PRIVATE)
     @Volatile
     private var lastOkTileNowMs = 0L
+    @Volatile
+    private var lastNowJson: String? = nowPrefs.getString(KEY_NOW, null)
 
     init {
         synchronized(lock) { store.load() }
@@ -134,9 +137,8 @@ class RecordRepository internal constructor(
     }
 
     fun liveCurrentEventId(): String? {
-        if (isOnline()) {
-            runCatching { api.fetchNow().current?.id }.getOrNull()?.let { return it }
-        }
+        val current = fetchNowLogged()
+        if (current != null || lastNowResult() == "ok") return current?.id
         return synchronized(lock) { store.openEvent()?.id }
     }
 
@@ -185,6 +187,23 @@ class RecordRepository internal constructor(
             }
         }
         queueStop(current.id, at)
+    }
+
+    fun signalHsState(state: String, atMs: Long) {
+        val at = ApiTime.iso(ApiTime.clamp(Instant.ofEpochMilli(atMs)))
+        val eventId = newWatchEventId()
+        val op = QueueOp(op = "state", at = at, eventId = eventId, state = state)
+        if (isOnline()) {
+            try {
+                ingest(mergeQueue(listOf(op)))
+                afterOnlineWrite()
+                return
+            } catch (e: ApiException) {
+                if (isClientError(e)) throw e
+            }
+        }
+        synchronized(lock) { store.enqueue(op) }
+        scheduleFlush()
     }
 
     fun signalStart(taskId: String, atMs: Long): String {
@@ -585,6 +604,7 @@ class RecordRepository internal constructor(
                         ingest(api.start(taskId, op.at, op.eventId))
                     }
                     "stop" -> ingest(api.stop(op.eventId, op.at))
+                    "state" -> ingest(mergeQueue(listOf(op)))
                 }
             } catch (e: ApiException) {
                 Log.w(RECORD_TAG, "flush one ${op.op} ${op.eventId} ${e.status} ${e.message}")
@@ -620,6 +640,7 @@ class RecordRepository internal constructor(
             store.setEvents(next)
         }
         pingTile()
+        ExerciseSync.adoptServerCurrent(app, write.current, write.last)
     }
 
     private fun pullMasterAndLog() {
@@ -648,6 +669,7 @@ class RecordRepository internal constructor(
             store.setEvents(next)
         }
         pingTile()
+        ExerciseSync.adoptServerCurrent(app, now?.current, now?.last)
     }
 
     private fun pingTile() {
@@ -658,10 +680,60 @@ class RecordRepository internal constructor(
     }
 
     fun peekPrevTaskId(): String? {
-        if (isOnline()) {
-            runCatching { api.fetchNow().current?.taskId }.getOrNull()?.let { return it }
-        }
+        val current = fetchNowLogged()
+        if (current != null || lastNowResult() == "ok") return current?.taskId
         return localCurrentTaskId()
+    }
+
+    fun lastNowDetail(): JSONObject? = lastNowJson?.let { raw ->
+        runCatching { JSONObject(raw) }.getOrNull()
+    }
+
+    private fun lastNowResult(): String? = lastNowDetail()?.optString("result")?.ifEmpty { null }
+
+    private fun fetchNowLogged(): Event? {
+        val at = ApiTime.iso(Instant.now())
+        val localTask = localCurrentTaskId()
+        if (!isOnline()) {
+            rememberNow(
+                JSONObject()
+                    .put("result", "offline")
+                    .put("at", at)
+                    .put("used", "local")
+                    .put("localTask", localTask ?: JSONObject.NULL),
+            )
+            return null
+        }
+        return try {
+            val current = api.fetchNow().current
+            rememberNow(
+                JSONObject()
+                    .put("result", "ok")
+                    .put("at", at)
+                    .put("used", "server")
+                    .put("taskId", current?.taskId ?: JSONObject.NULL)
+                    .put("eventId", current?.id ?: JSONObject.NULL),
+            )
+            current
+        } catch (e: ApiException) {
+            rememberNow(
+                JSONObject()
+                    .put("result", "fail")
+                    .put("at", at)
+                    .put("used", "local")
+                    .put("status", e.status)
+                    .put("error", e.message ?: "")
+                    .put("localTask", localTask ?: JSONObject.NULL),
+            )
+            null
+        }
+    }
+
+    private fun rememberNow(detail: JSONObject) {
+        val raw = detail.toString()
+        lastNowJson = raw
+        nowPrefs.edit().putString(KEY_NOW, raw).apply()
+        noteHs("hs-now ${detail.optString("result")}", detail)
     }
 
     private fun fetchRecentEvents(): List<Event> {
@@ -684,6 +756,7 @@ class RecordRepository internal constructor(
 
     companion object {
         private const val FLUSH_WORK = "tl-flush"
+        private const val KEY_NOW = "lastNow"
         private val tokyo = ZoneId.of("Asia/Tokyo")
         private val tilePullExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
             Thread(r, "tl-tile-pull").apply { isDaemon = true }
