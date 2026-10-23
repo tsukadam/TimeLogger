@@ -14,16 +14,17 @@
  * GET  /api/index.php?resource=now
  *      記録中 1 本（なければ null）と、直前に閉じた 1 本 last、tasks の更新時刻
  * POST /api/index.php?resource=start
- *      Body: { taskId, at?, eventId? } — 開いている記録を閉じ、同時刻に開始。eventId は末尾 w
+ *      Body: { taskId, at?, eventId?, hs? } — 開いている記録を閉じ、同時刻に開始。eventId は末尾 w。hs は入眠準備開始時の Health STATE
  * POST /api/index.php?resource=signal-start
- *      Body: { taskId, at, eventId? } — [at, いま) を上書きして at で開始（スナップ無し）
+ *      Body: { taskId, at, eventId? } — [at, いま) を上書きして at で開始（スナップ無し）。startedBy=exercise
  * POST /api/index.php?resource=cut-in
  *      signal-start の別名
  * POST /api/index.php?resource=signal-stop
- *      Body: { eventId, at, resumeTaskId? } — 指定行を閉じ、任意で直前タスクを at から上書き開始
+ *      Body: { eventId, at, sleepTaskId?, sleepPrepTaskId? } — 指定行を閉じ、チェーンの外を at から開始
  * POST /api/index.php?resource=merge-queue
  *      Body: { ops: [{op:start|stop|state,...}], sleepTaskId?, sleepPrepTaskId? }
- *      本体とキューが触れる箇所だけマージ。state は覆う行を見て睡眠の入り／抜け
+ *      本体とキューが触れる箇所だけマージ。state は覆う行を見て睡眠の入り／抜け。
+ *      start は hs / startedBy=exercise を載せてよい。書いたあと閉じた入眠準備の後処理あり
  * POST /api/index.php?resource=stop
  *      Body: { at?, eventId? } — まだ開いている自分だけを閉じる。既に閉じていたら 409
  * POST /api/index.php?resource=overwrite
@@ -53,7 +54,9 @@
  *      Body: { taskId } — 記録中なら同時に記録も閉じる
  *
  * POST /api/index.php?resource=debug
- *      Body: { level, message, detail? } — data/debug.log に JSONL 追記
+ *      Body: { level, message, detail?, at?, ua? }
+ *      または { entries: [{ level, message, detail?, at?, ua? }, ...], ua? }
+ *      data/debug.log に JSONL 追記。merge しない。at があれば端末の発生時刻。
  * GET  /api/index.php?resource=debug
  *      data/debug.log 全文（無ければ空）
  *
@@ -135,6 +138,54 @@ function nowIsoMs(): string
 {
     $dt = new DateTimeImmutable('now', new DateTimeZone('Asia/Tokyo'));
     return $dt->format('Y-m-d\\TH:i:s.vP');
+}
+
+function parseDebugAt(mixed $at): string
+{
+    if ($at === null || $at === '') {
+        return nowIsoMs();
+    }
+    if (!is_string($at)) {
+        fail(400, 'invalid at');
+    }
+    try {
+        $dt = new DateTimeImmutable($at);
+    } catch (Exception $e) {
+        fail(400, 'invalid at');
+    }
+    return $dt->setTimezone(new DateTimeZone('Asia/Tokyo'))->format('Y-m-d\\TH:i:s.vP');
+}
+
+/** @param array<string, mixed> $decoded */
+function normalizeDebugEntry(array $decoded, ?string $defaultUa = null): array
+{
+    $level = $decoded['level'] ?? 'info';
+    $message = $decoded['message'] ?? '';
+    if (!is_string($level) || !is_string($message) || $message === '') {
+        fail(400, 'level/message required');
+    }
+    if (!in_array($level, ['error', 'warn', 'info'], true)) {
+        fail(400, 'invalid level');
+    }
+    $detail = $decoded['detail'] ?? null;
+    $detailJson = json_encode($detail, JSON_UNESCAPED_UNICODE);
+    if ($detailJson !== false && strlen($detailJson) > 4000) {
+        $detail = ['_truncated' => true, 'preview' => substr($detailJson, 0, 500)];
+    }
+    $msg = strlen($message) > 500 ? substr($message, 0, 500) : $message;
+    $ua = $defaultUa;
+    if (isset($decoded['ua']) && is_string($decoded['ua'])) {
+        $ua = strlen($decoded['ua']) > 300 ? substr($decoded['ua'], 0, 300) : $decoded['ua'];
+    } elseif (is_string($ua) && strlen($ua) > 300) {
+        $ua = substr($ua, 0, 300);
+    }
+    return [
+        'at' => parseDebugAt($decoded['at'] ?? null),
+        'level' => $level,
+        'message' => $msg,
+        'detail' => $detail,
+        'ua' => $ua,
+    ];
 }
 
 /**
@@ -289,42 +340,37 @@ if ($resource === 'debug') {
         if (!is_array($decoded)) {
             fail(400, 'invalid json');
         }
-        $level = $decoded['level'] ?? 'info';
-        $message = $decoded['message'] ?? '';
-        if (!is_string($level) || !is_string($message) || $message === '') {
-            fail(400, 'level/message required');
-        }
-        if (!in_array($level, ['error', 'warn', 'info'], true)) {
-            fail(400, 'invalid level');
-        }
-        // クライアント時刻よりサーバー時刻を正とする。detail は任意（長大すぎるものは切る）
-        $detail = $decoded['detail'] ?? null;
-        $detailJson = json_encode($detail, JSON_UNESCAPED_UNICODE);
-        if ($detailJson !== false && strlen($detailJson) > 4000) {
-            $detail = ['_truncated' => true, 'preview' => substr($detailJson, 0, 500)];
-        }
-        $msg = is_string($message) ? $message : '';
-        if (strlen($msg) > 500) {
-            $msg = substr($msg, 0, 500);
-        }
-        $ua = null;
+        $defaultUa = null;
         if (isset($decoded['ua']) && is_string($decoded['ua'])) {
-            $ua = strlen($decoded['ua']) > 300 ? substr($decoded['ua'], 0, 300) : $decoded['ua'];
+            $defaultUa = $decoded['ua'];
         }
-        $entry = [
-            'at' => nowIsoMs(),
-            'level' => $level,
-            'message' => $msg,
-            'detail' => $detail,
-            'ua' => $ua,
-        ];
-        $line = json_encode($entry, JSON_UNESCAPED_UNICODE);
-        if ($line === false) {
-            fail(500, 'encode failed');
+        $normalized = [];
+        if (array_key_exists('entries', $decoded)) {
+            if (!is_array($decoded['entries']) || $decoded['entries'] === []) {
+                fail(400, 'entries required');
+            }
+            if (count($decoded['entries']) > 100) {
+                fail(400, 'too many entries');
+            }
+            foreach ($decoded['entries'] as $item) {
+                if (!is_array($item)) {
+                    fail(400, 'invalid entry');
+                }
+                $normalized[] = normalizeDebugEntry($item, $defaultUa);
+            }
+        } else {
+            $normalized[] = normalizeDebugEntry($decoded, $defaultUa);
         }
-        $line .= "\n";
+        $lines = '';
+        foreach ($normalized as $entry) {
+            $line = json_encode($entry, JSON_UNESCAPED_UNICODE);
+            if ($line === false) {
+                fail(500, 'encode failed');
+            }
+            $lines .= $line . "\n";
+        }
 
-        withResourceLock($lockPath, LOCK_EX, static function () use ($path, $line): void {
+        withResourceLock($lockPath, LOCK_EX, static function () use ($path, $lines): void {
             $dir = dirname($path);
             if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
                 fail(500, 'mkdir data failed');
@@ -337,7 +383,7 @@ if ($resource === 'debug') {
             if ($fp === false) {
                 fail(500, 'open log failed');
             }
-            writeAll($fp, $line);
+            writeAll($fp, $lines);
             fflush($fp);
             fclose($fp);
         });

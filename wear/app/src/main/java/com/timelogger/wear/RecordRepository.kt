@@ -46,6 +46,7 @@ class RecordRepository internal constructor(
 ) {
     private val lock = Any()
     private val store = LocalStore(app)
+    private val debugLog = DebugLogStore(app)
     private val nowPrefs = app.getSharedPreferences("record_now", Context.MODE_PRIVATE)
     @Volatile
     private var lastOkTileNowMs = 0L
@@ -129,6 +130,7 @@ class RecordRepository internal constructor(
     fun flushThenPull() {
         if (!isOnline()) throw ApiException(-1, "オフライン")
         drainQueue()
+        drainDebug()
         if (synchronized(lock) { store.queue.isEmpty() }) {
             pullMasterAndLog()
         } else {
@@ -143,35 +145,37 @@ class RecordRepository internal constructor(
     }
 
     fun toggleTaskLocal(taskId: String) {
-        ExerciseSync.dropHsSession(app)
         val open = synchronized(lock) { store.openEvent() }
+        dropHsIfTakingOver(open?.id)
         val at = ApiTime.iso(Instant.now())
         if (open?.taskId == taskId) {
             queueStop(open.id, at)
         } else {
-            queueStart(newWatchEventId(), taskId, at)
+            queueStart(newWatchEventId(), taskId, at, hs = hsForPrepStart(taskId))
         }
     }
 
     fun startTask(taskId: String) {
-        ExerciseSync.dropHsSession(app)
+        val openId = synchronized(lock) { store.openEvent()?.id }
+        dropHsIfTakingOver(openId)
         val at = ApiTime.iso(Instant.now())
         val eventId = newWatchEventId()
+        val hs = hsForPrepStart(taskId)
         if (isOnline()) {
             try {
-                ingest(api.start(taskId, at, eventId))
+                ingest(api.start(taskId, at, eventId, hs))
                 afterOnlineWrite()
                 return
             } catch (e: ApiException) {
                 if (isClientError(e)) throw e
             }
         }
-        queueStart(eventId, taskId, at)
+        queueStart(eventId, taskId, at, hs = hs)
     }
 
     fun stopCurrent() {
-        ExerciseSync.dropHsSession(app)
         val current = synchronized(lock) { store.openEvent() } ?: return
+        dropHsIfTakingOver(current.id)
         val at = ApiTime.iso(Instant.now())
         if (isOnline()) {
             try {
@@ -218,15 +222,23 @@ class RecordRepository internal constructor(
                 if (isClientError(e)) throw e
             }
         }
-        queueStart(eventId, taskId, at)
+        queueStart(eventId, taskId, at, startedBy = "exercise")
         return eventId
     }
 
-    fun signalStop(eventId: String, atMs: Long, resumeTaskId: String?) {
+    fun signalStop(eventId: String, atMs: Long) {
         val at = ApiTime.iso(ApiTime.clamp(Instant.ofEpochMilli(atMs)))
+        val bindings = ExerciseBindingsStore.get(app)
         if (isOnline()) {
             try {
-                ingest(api.signalStop(eventId, at, resumeTaskId))
+                ingest(
+                    api.signalStop(
+                        eventId,
+                        at,
+                        sleepTaskId = bindings.taskIdFor(ExerciseTypes.SLEEP_ID),
+                        sleepPrepTaskId = bindings.taskIdFor(ExerciseTypes.SLEEP_PREP_ID),
+                    ),
+                )
                 afterOnlineWrite()
                 return
             } catch (e: ApiException) {
@@ -238,11 +250,6 @@ class RecordRepository internal constructor(
             }
         }
         queueStop(eventId, at)
-        if (!resumeTaskId.isNullOrEmpty()) {
-            synchronized(lock) {
-                store.setPendingResume(PendingResume(eventId, at, resumeTaskId))
-            }
-        }
     }
 
     fun overwriteEvent(
@@ -251,7 +258,7 @@ class RecordRepository internal constructor(
         endedAt: String,
         taskId: String? = null,
     ) {
-        ExerciseSync.dropHsSession(app)
+        dropHsIfTakingOver(eventId)
         val editedAt = ApiTime.iso(Instant.now())
         if (isOnline()) {
             try {
@@ -274,7 +281,6 @@ class RecordRepository internal constructor(
         startedAt: String,
         taskId: String? = null,
     ) {
-        ExerciseSync.dropHsSession(app)
         if (isOnline()) {
             try {
                 api.update(eventId, startedAt, taskId)
@@ -292,7 +298,7 @@ class RecordRepository internal constructor(
     }
 
     fun deleteEvent(eventId: String) {
-        ExerciseSync.dropHsSession(app)
+        dropHsIfTakingOver(eventId)
         if (isOnline()) {
             try {
                 api.delete(eventId)
@@ -340,7 +346,33 @@ class RecordRepository internal constructor(
         }
     }
 
-    private fun queueStart(eventId: String, taskId: String, at: String) {
+    private fun dropHsIfTakingOver(eventId: String?) {
+        if (eventId == null) return
+        val openId = synchronized(lock) { store.openEvent()?.id }
+        if (openId != eventId) return
+        ExerciseSync.dropHsIfEvent(app, eventId)
+    }
+
+    private fun hsForPrepStart(taskId: String): String? {
+        val isPrep = synchronized(lock) {
+            val bound = ExerciseBindingsStore.get(app).taskIdFor(ExerciseTypes.SLEEP_PREP_ID)
+            if (taskId == bound) {
+                true
+            } else {
+                store.tasks.any { it.id == taskId && (it.name == "入眠準備" || it.name == "睡眠準備") }
+            }
+        }
+        if (!isPrep) return null
+        return ExerciseSyncStore(app).lastHsState()
+    }
+
+    private fun queueStart(
+        eventId: String,
+        taskId: String,
+        at: String,
+        hs: String? = null,
+        startedBy: String? = null,
+    ) {
         synchronized(lock) {
             val event = store.makeEvent(eventId, taskId, at)
                 ?: throw ApiException(404, "タスクがありません")
@@ -349,7 +381,16 @@ class RecordRepository internal constructor(
                 store.enqueue(QueueOp("stop", at, open.id))
             }
             store.applyLocalStart(event)
-            store.enqueue(QueueOp("start", at, eventId, taskId))
+            store.enqueue(
+                QueueOp(
+                    op = "start",
+                    at = at,
+                    eventId = eventId,
+                    taskId = taskId,
+                    hs = hs,
+                    startedBy = startedBy,
+                ),
+            )
         }
         scheduleFlush()
         pingTile()
@@ -521,7 +562,7 @@ class RecordRepository internal constructor(
     }
 
     fun noteHs(message: String, detail: JSONObject) {
-        runCatching { api.debug(message, detail) }
+        enqueueDebug("info", message, detail)
     }
 
     private fun noteRemote(message: String, eventId: String, err: ApiException?) {
@@ -529,7 +570,21 @@ class RecordRepository internal constructor(
         if (err != null) {
             detail.put("status", err.status).put("error", err.message ?: "")
         }
-        runCatching { api.debug(message, detail) }
+        enqueueDebug(if (err != null) "warn" else "info", message, detail)
+    }
+
+    private fun enqueueDebug(level: String, message: String, detail: JSONObject?) {
+        debugLog.append(level, message, detail, ApiTime.iso(Instant.now()))
+        scheduleFlush()
+    }
+
+    private fun drainDebug() {
+        while (true) {
+            val batch = debugLog.peek(DEBUG_BATCH)
+            if (batch.isEmpty()) break
+            api.debugEntries(batch)
+            debugLog.dropFlushed(batch.size)
+        }
     }
 
     private fun mergeQueue(ops: List<QueueOp>): CommandWrite {
@@ -601,7 +656,11 @@ class RecordRepository internal constructor(
                     "start" -> {
                         val taskId = op.taskId
                             ?: throw ApiException(400, "taskId required")
-                        ingest(api.start(taskId, op.at, op.eventId))
+                        if (op.startedBy == "exercise") {
+                            ingest(api.signalStart(taskId, op.at, op.eventId))
+                        } else {
+                            ingest(api.start(taskId, op.at, op.eventId, op.hs))
+                        }
                     }
                     "stop" -> ingest(api.stop(op.eventId, op.at))
                     "state" -> ingest(mergeQueue(listOf(op)))
@@ -756,6 +815,7 @@ class RecordRepository internal constructor(
 
     companion object {
         private const val FLUSH_WORK = "tl-flush"
+        private const val DEBUG_BATCH = 50
         private const val KEY_NOW = "lastNow"
         private val tokyo = ZoneId.of("Asia/Tokyo")
         private val tilePullExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->

@@ -13,6 +13,8 @@ declare(strict_types=1);
 const COMMAND_SNAP_MS = 2 * 60 * 1000;
 const COMMAND_MIN_RECORD_MS = 1000;
 const COMMAND_FUTURE_GRACE_MS = 60 * 1000;
+const PREP_SLEEP_WAIT_MS = 5 * 60 * 1000;
+const PREP_SLEEP_MIN_MS = 30 * 60 * 1000;
 
 function commandsLockPath(string $dataDir): string
 {
@@ -606,6 +608,28 @@ function optionalTaskId(mixed $value, string $field): ?string
     return $value;
 }
 
+function optionalHs(mixed $value): ?string
+{
+    if ($value === null || $value === '') {
+        return null;
+    }
+    if (!is_string($value) || !in_array($value, ['ASLEEP', 'PASSIVE', 'EXERCISE', 'UNKNOWN'], true)) {
+        fail(400, 'hs が不正です');
+    }
+    return $value;
+}
+
+function optionalClientStartedBy(mixed $value): ?string
+{
+    if ($value === null || $value === '') {
+        return null;
+    }
+    if ($value !== 'exercise') {
+        fail(400, 'startedBy が不正です');
+    }
+    return 'exercise';
+}
+
 /** @param array<string, mixed> $ev */
 function eventStartMs(array $ev): int
 {
@@ -1004,8 +1028,9 @@ function makeOpenEvent(
     string $startedAt,
     string $stamp,
     ?string $id = null,
+    array $meta = [],
 ): array {
-    return [
+    $ev = [
         'id' => $id ?? newUuid(),
         'taskId' => $task['id'],
         'folderId' => $folder['id'],
@@ -1018,6 +1043,15 @@ function makeOpenEvent(
         'createdAt' => $stamp,
         'updatedAt' => $stamp,
     ];
+    $startedBy = $meta['startedBy'] ?? null;
+    if (is_string($startedBy) && $startedBy !== '') {
+        $ev['startedBy'] = $startedBy;
+    }
+    $hs = $meta['hs'] ?? null;
+    if (is_string($hs) && $hs !== '') {
+        $ev['hs'] = $hs;
+    }
+    return $ev;
 }
 
 /**
@@ -1198,6 +1232,162 @@ function persistEventList(string $dataDir, array $index, array $chunks, array $e
 
 /**
  * @param list<array<string, mixed>> $events
+ * @param array<string, mixed> $tasksFile
+ * @return array{index: array<string, mixed>, chunks: array<string, array{events: list<array<string, mixed>>, updatedAt: string}>}
+ */
+function persistEventsPromoted(
+    string $dataDir,
+    array $index,
+    array $chunks,
+    array $events,
+    array $tasksFile,
+    int $nowMs,
+    string $stamp,
+    ?string $sleepTaskId = null,
+    ?string $sleepPrepTaskId = null,
+): array {
+    $events = promoteLongPrepToSleep(
+        $events,
+        $tasksFile,
+        $nowMs,
+        $stamp,
+        $sleepTaskId,
+        $sleepPrepTaskId,
+    );
+    return persistEventList($dataDir, $index, $chunks, $events, $stamp);
+}
+
+function findTaskIdByNames(array $tasksFile, array $names): ?string
+{
+    foreach ($tasksFile['tasks'] ?? [] as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $name = $row['name'] ?? null;
+        $id = $row['id'] ?? null;
+        if (is_string($name) && is_string($id) && in_array($name, $names, true)) {
+            return $id;
+        }
+    }
+    return null;
+}
+
+/**
+ * @return array{0: ?string, 1: ?string}
+ */
+function resolveSleepTaskIds(array $tasksFile, ?string $sleepTaskId, ?string $sleepPrepTaskId): array
+{
+    if ($sleepTaskId === null || $sleepTaskId === '') {
+        $sleepTaskId = findTaskIdByNames($tasksFile, ['睡眠']);
+    }
+    if ($sleepPrepTaskId === null || $sleepPrepTaskId === '') {
+        $sleepPrepTaskId = findTaskIdByNames($tasksFile, ['入眠準備', '睡眠準備']);
+    }
+    if ($sleepTaskId === null || $sleepTaskId === '' || $sleepPrepTaskId === null || $sleepPrepTaskId === '') {
+        return [null, null];
+    }
+    return [$sleepTaskId, $sleepPrepTaskId];
+}
+
+/** @param array<string, mixed> $ev */
+function eventStartedByOf(array $ev): ?string
+{
+    $v = $ev['startedBy'] ?? null;
+    return is_string($v) && $v !== '' ? $v : null;
+}
+
+/** @param array<string, mixed> $ev */
+function eventHsOf(array $ev): ?string
+{
+    $v = $ev['hs'] ?? null;
+    return is_string($v) && $v !== '' ? $v : null;
+}
+
+/**
+ * 閉じた入眠準備が 30 分以上で、次が睡眠でなく、ユーザー開始（押したとき ASLEEP、またはブラウザ）なら、
+ * 開始 5 分後から睡眠にする。
+ *
+ * @param list<array<string, mixed>> $events
+ * @param array<string, mixed> $tasksFile
+ * @return list<array<string, mixed>>
+ */
+function promoteLongPrepToSleep(
+    array $events,
+    array $tasksFile,
+    int $nowMs,
+    string $stamp,
+    ?string $sleepTaskId = null,
+    ?string $sleepPrepTaskId = null,
+): array {
+    [$sleepId, $prepId] = resolveSleepTaskIds($tasksFile, $sleepTaskId, $sleepPrepTaskId);
+    if ($sleepId === null || $prepId === null) {
+        return $events;
+    }
+    for ($guard = 0; $guard < 64; $guard++) {
+        $hit = null;
+        $sorted = eventsChrono($events);
+        foreach ($sorted as $i => $ev) {
+            if (($ev['taskId'] ?? '') !== $prepId) {
+                continue;
+            }
+            if (!is_string($ev['endedAt'] ?? null)) {
+                continue;
+            }
+            if (eventStartedByOf($ev) !== null) {
+                continue;
+            }
+            $id = (string) ($ev['id'] ?? '');
+            $asleep = eventHsOf($ev) === 'ASLEEP';
+            $browser = $id !== '' && !str_ends_with($id, 'w');
+            if (!$asleep && !$browser) {
+                continue;
+            }
+            $startMs = eventStartMs($ev);
+            $endMs = eventEndMsOf($ev, $nowMs);
+            if ($endMs - $startMs < PREP_SLEEP_MIN_MS) {
+                continue;
+            }
+            $next = $sorted[$i + 1] ?? null;
+            if ($next !== null && ($next['taskId'] ?? '') === $sleepId) {
+                continue;
+            }
+            $sleepAt = $startMs + PREP_SLEEP_WAIT_MS;
+            if ($sleepAt >= $endMs) {
+                continue;
+            }
+            $hit = ['endMs' => $endMs, 'endIso' => $ev['endedAt'], 'sleepAt' => $sleepAt];
+            break;
+        }
+        if ($hit === null) {
+            return $events;
+        }
+        $sleepAtIso = commandIsoFromMs($hit['sleepAt']);
+        $seg = [
+            'source' => 'queue',
+            'eventId' => newUuid(),
+            'taskId' => $sleepId,
+            'startMs' => $hit['sleepAt'],
+            'startIso' => $sleepAtIso,
+            'endMs' => $hit['endMs'],
+            'endIso' => $hit['endIso'],
+            'open' => false,
+            'startedBy' => 'prep',
+        ];
+        $events = mergeQueueIntoEvents(
+            $events,
+            [$seg],
+            $sleepId,
+            $prepId,
+            $nowMs,
+            $stamp,
+            $tasksFile,
+        )['events'];
+    }
+    return $events;
+}
+
+/**
+ * @param list<array<string, mixed>> $events
  * @return array{ok: 'applied'|'skipped'|'missing', events: list<array<string, mixed>>}
  */
 function applyStopToEvents(array $events, string $eventId, int $atMs, string $atIso, string $stamp): array
@@ -1261,6 +1451,7 @@ function handleStart(string $dataDir): void
         fail(400, 'taskId required');
     }
     $eventId = optionalWatchEventId($body);
+    $hs = optionalHs($body['hs'] ?? null);
     $at = parseCommandAt($body['at'] ?? null);
     $endMs = commandMs($at);
     $stamp = commandIso($at);
@@ -1309,13 +1500,29 @@ function handleStart(string $dataDir): void
         }
     }
 
-    $started = makeOpenEvent($task, $folder, $startIso, $stamp, $eventId);
+    $started = makeOpenEvent(
+        $task,
+        $folder,
+        $startIso,
+        $stamp,
+        $eventId,
+        $hs !== null ? ['hs' => $hs] : [],
+    );
     $qid = quarterIdFromIso($startIso);
     $base = $overlay[$qid]['events'] ?? [];
     $base[] = $started;
     $dirty[$qid] = ['events' => $base, 'updatedAt' => $stamp];
-
-    $written = persistCommandWrites($dataDir, $index, $dirty, $stamp);
+    $overlay[$qid] = $dirty[$qid];
+    $nowMs = commandMs(commandNow());
+    $written = persistEventsPromoted(
+        $dataDir,
+        $index,
+        $chunks,
+        allEvents($overlay),
+        $tasks,
+        $nowMs,
+        $stamp,
+    );
     echoCommandWrite($tasks, $index, $chunks, $written);
 }
 
@@ -1347,7 +1554,19 @@ function handleSignalStart(string $dataDir): void
         $stamp,
         $eventId,
     );
-    $written = persistEventList($dataDir, $index, $chunks, $applied['events'], $stamp);
+    $n = count($applied['events']);
+    if ($n > 0) {
+        $applied['events'][$n - 1]['startedBy'] = 'exercise';
+    }
+    $written = persistEventsPromoted(
+        $dataDir,
+        $index,
+        $chunks,
+        $applied['events'],
+        $tasks,
+        $nowMs,
+        $stamp,
+    );
     echoCommandWrite($tasks, $index, $chunks, $written);
 }
 
@@ -1356,13 +1575,6 @@ function handleSignalStop(string $dataDir): void
     $body = readJsonBody(true);
     $eventId = requireStringId($body['eventId'] ?? null, 'eventId');
     $at = requireAtIso($body['at'] ?? null);
-    $resumeTaskId = $body['resumeTaskId'] ?? null;
-    if ($resumeTaskId !== null && $resumeTaskId !== '' && !is_string($resumeTaskId)) {
-        fail(400, 'resumeTaskId が不正です');
-    }
-    if (!is_string($resumeTaskId) || $resumeTaskId === '') {
-        $resumeTaskId = null;
-    }
     $atMs = commandMs($at);
     $atIso = commandIso($at);
     $now = commandNow();
@@ -1370,6 +1582,8 @@ function handleSignalStop(string $dataDir): void
     $stamp = commandIso($now);
 
     $tasks = loadTasksFile($dataDir);
+    $sleepTaskId = optionalTaskId($body['sleepTaskId'] ?? null, 'sleepTaskId');
+    $sleepPrepTaskId = optionalTaskId($body['sleepPrepTaskId'] ?? null, 'sleepPrepTaskId');
     $index = loadEventsIndex($dataDir);
     $chunks = loadChunks($dataDir, $index['chunks'], $stamp);
     $events = allEvents($chunks);
@@ -1382,23 +1596,38 @@ function handleSignalStop(string $dataDir): void
         fail(409, '既に終了しています');
     }
     $events = $closed['events'];
-
-    if ($resumeTaskId !== null) {
-        [$task, $folder] = findTaskAndFolder($tasks, $resumeTaskId);
-        $events = overwriteStart(
+    $stopped = null;
+    foreach ($events as $ev) {
+        if (($ev['id'] ?? null) === $eventId) {
+            $stopped = $ev;
+            break;
+        }
+    }
+    if ($stopped !== null) {
+        $events = resumeChainPrev(
             $events,
-            $task,
-            $folder,
+            $stopped,
             $atMs,
             $atIso,
             $nowMs,
-            $nowMs,
             $stamp,
-            null,
+            $tasks,
+            $sleepTaskId,
+            $sleepPrepTaskId,
         )['events'];
     }
 
-    $written = persistEventList($dataDir, $index, $chunks, $events, $stamp);
+    $written = persistEventsPromoted(
+        $dataDir,
+        $index,
+        $chunks,
+        $events,
+        $tasks,
+        $nowMs,
+        $stamp,
+        $sleepTaskId,
+        $sleepPrepTaskId,
+    );
     echoCommandWrite($tasks, $index, $chunks, $written);
 }
 
@@ -1457,6 +1686,14 @@ function queueOpsToSegments(array $ops, array $events, int $nowMs): array
                 'endIso' => null,
                 'open' => true,
             ];
+            $hs = optionalHs($op['hs'] ?? null);
+            if ($hs !== null) {
+                $byId[$eventId]['hs'] = $hs;
+            }
+            $startedBy = optionalClientStartedBy($op['startedBy'] ?? null);
+            if ($startedBy !== null) {
+                $byId[$eventId]['startedBy'] = $startedBy;
+            }
         } else {
             $eventId = requireStringId($op['eventId'] ?? null, 'eventId');
             if ($openId === $eventId && isset($byId[$eventId])) {
@@ -1672,6 +1909,124 @@ function eventCoveringAt(array $events, int $atMs, int $nowMs): ?array
 
 /**
  * @param list<array<string, mixed>> $events
+ */
+function eventBeforeAt(array $events, int $atMs, int $nowMs): ?array
+{
+    $cover = eventCoveringAt($events, $atMs - 1, $nowMs);
+    if ($cover !== null) {
+        return $cover;
+    }
+    $best = null;
+    $bestEnd = -1;
+    foreach ($events as $ev) {
+        if (!is_array($ev)) {
+            continue;
+        }
+        $start = eventStartMs($ev);
+        if ($start >= $atMs) {
+            continue;
+        }
+        $open = ($ev['endedAt'] ?? null) === null;
+        $end = $open ? $nowMs : eventEndMsOf($ev, $nowMs);
+        if ($end <= $atMs && $end >= $bestEnd) {
+            $best = $ev;
+            $bestEnd = $end;
+        }
+    }
+    return $best;
+}
+
+/**
+ * 同じフォルダの連続をチェーンとみなし、その外の taskId を返す。
+ * 外が睡眠なら入眠準備。
+ *
+ * @param list<array<string, mixed>> $events
+ */
+function chainPrevTaskId(
+    array $events,
+    array $stopped,
+    int $nowMs,
+    ?string $sleepTaskId,
+    ?string $sleepPrepTaskId,
+): ?string {
+    $folderId = (string) ($stopped['folderId'] ?? '');
+    if ($folderId === '') {
+        return null;
+    }
+    $atMs = eventStartMs($stopped);
+    for ($i = 0; $i < 64; $i++) {
+        $prev = eventBeforeAt($events, $atMs, $nowMs);
+        if ($prev === null) {
+            return null;
+        }
+        $taskId = (string) ($prev['taskId'] ?? '');
+        if ($taskId === '') {
+            return null;
+        }
+        if ($sleepTaskId !== null && $sleepTaskId !== '' && $taskId === $sleepTaskId) {
+            return ($sleepPrepTaskId !== null && $sleepPrepTaskId !== '') ? $sleepPrepTaskId : $taskId;
+        }
+        if ((string) ($prev['folderId'] ?? '') !== $folderId) {
+            return $taskId;
+        }
+        $nextAt = eventStartMs($prev);
+        if ($nextAt >= $atMs) {
+            return null;
+        }
+        $atMs = $nextAt;
+    }
+    return null;
+}
+
+/**
+ * @param list<array<string, mixed>> $events
+ * @param array<string, mixed> $stopped
+ * @param array<string, mixed> $tasks
+ * @return array{events: list<array<string, mixed>>, skipped: list<array{eventId: string, at: string}>}
+ */
+function resumeChainPrev(
+    array $events,
+    array $stopped,
+    int $atMs,
+    string $atIso,
+    int $nowMs,
+    string $stamp,
+    array $tasks,
+    ?string $sleepTaskId,
+    ?string $sleepPrepTaskId,
+): array {
+    $prevId = chainPrevTaskId($events, $stopped, $nowMs, $sleepTaskId, $sleepPrepTaskId);
+    if ($prevId === null || $prevId === '') {
+        return ['events' => $events, 'skipped' => []];
+    }
+    $cover = eventCoveringAt($events, $atMs, $nowMs);
+    if ($cover !== null && ($cover['taskId'] ?? '') === $prevId) {
+        return ['events' => $events, 'skipped' => []];
+    }
+    $seg = [
+        'source' => 'queue',
+        'eventId' => newUuid(),
+        'taskId' => $prevId,
+        'startMs' => $atMs,
+        'startIso' => $atIso,
+        'endMs' => $nowMs,
+        'endIso' => null,
+        'open' => true,
+        'startedBy' => 'resume',
+    ];
+    return mergeQueueIntoEvents(
+        $events,
+        [$seg],
+        $sleepTaskId,
+        $sleepPrepTaskId,
+        $nowMs,
+        $stamp,
+        $tasks,
+    );
+}
+
+/**
+ * @param list<array<string, mixed>> $events
  * @param list<array<string, mixed>> $queueSegs
  * @param array<string, mixed> $tasks
  * @return array{events: list<array<string, mixed>>, skipped: list<array{eventId: string, at: string}>}
@@ -1719,7 +2074,14 @@ function mergeQueueIntoEvents(
             continue;
         }
         [$task, $folder] = findTaskAndFolder($tasks, $seg['taskId']);
-        $ev = makeOpenEvent($task, $folder, $piece['startIso'], $stamp, $seg['eventId']);
+        $meta = [];
+        if (isset($seg['startedBy']) && is_string($seg['startedBy'])) {
+            $meta['startedBy'] = $seg['startedBy'];
+        }
+        if (isset($seg['hs']) && is_string($seg['hs'])) {
+            $meta['hs'] = $seg['hs'];
+        }
+        $ev = makeOpenEvent($task, $folder, $piece['startIso'], $stamp, $seg['eventId'], $meta);
         if (!$piece['open']) {
             $ev['endedAt'] = $piece['endIso'];
         }
@@ -1776,6 +2138,7 @@ function applyHsState(
         'endMs' => $nowMs,
         'endIso' => null,
         'open' => true,
+        'startedBy' => $state === 'ASLEEP' ? 'asleep' : 'passive',
     ];
     return mergeQueueIntoEvents(
         $events,
@@ -1812,6 +2175,7 @@ function handleMergeQueue(string $dataDir): void
     $sleepTaskId = optionalTaskId($body['sleepTaskId'] ?? null, 'sleepTaskId');
     $sleepPrepTaskId = optionalTaskId($body['sleepPrepTaskId'] ?? null, 'sleepPrepTaskId');
     $skipped = [];
+    $queueSegs = [];
 
     if ($itemOps !== []) {
         $queueSegs = queueOpsToSegments($itemOps, $events, $nowMs);
@@ -1855,7 +2219,48 @@ function handleMergeQueue(string $dataDir): void
         }
     }
 
-    $written = persistEventList($dataDir, $index, $chunks, $events, $stamp);
+    $lastClosed = null;
+    foreach ($queueSegs as $seg) {
+        if (!($seg['open'] ?? false)) {
+            $lastClosed = $seg;
+        }
+    }
+    if ($lastClosed !== null) {
+        $stopped = null;
+        foreach ($events as $ev) {
+            if (($ev['id'] ?? null) === ($lastClosed['eventId'] ?? null)) {
+                $stopped = $ev;
+                break;
+            }
+        }
+        if ($stopped !== null && is_string($lastClosed['endIso'] ?? null)) {
+            $resumed = resumeChainPrev(
+                $events,
+                $stopped,
+                (int) $lastClosed['endMs'],
+                $lastClosed['endIso'],
+                $nowMs,
+                $stamp,
+                $tasks,
+                $sleepTaskId,
+                $sleepPrepTaskId,
+            );
+            $events = $resumed['events'];
+            $skipped = array_merge($skipped, $resumed['skipped']);
+        }
+    }
+
+    $written = persistEventsPromoted(
+        $dataDir,
+        $index,
+        $chunks,
+        $events,
+        $tasks,
+        $nowMs,
+        $stamp,
+        $sleepTaskId,
+        $sleepPrepTaskId,
+    );
     echoCommandWrite($tasks, $index, $chunks, $written, ['skipped' => $skipped]);
 }
 
@@ -1925,7 +2330,17 @@ function handleStop(string $dataDir): void
         ]);
         return;
     }
-    $written = persistCommandWrites($dataDir, $index, $dirty, $stamp);
+    $overlay = mergeOverlay($chunks, $dirty);
+    $nowMs = commandMs(commandNow());
+    $written = persistEventsPromoted(
+        $dataDir,
+        $index,
+        $chunks,
+        allEvents($overlay),
+        $tasks,
+        $nowMs,
+        $stamp,
+    );
     echoCommandWrite($tasks, $index, $chunks, $written);
 }
 
@@ -2165,7 +2580,15 @@ function handleOverwrite(string $dataDir): void
     }
     $next[] = $painted;
 
-    $written = persistEventList($dataDir, $index, $chunks, $next, $fileStamp);
+    $written = persistEventsPromoted(
+        $dataDir,
+        $index,
+        $chunks,
+        $next,
+        $tasks,
+        $nowMs,
+        $fileStamp,
+    );
     commandDebugLog($dataDir, 'overwrite ok', ['eventId' => $eventId]);
     echoCommandWrite($tasks, $index, $chunks, $written);
 }
@@ -2284,7 +2707,7 @@ function handleUpdate(string $dataDir): void
         $stamp,
     );
     $next[] = $updated;
-    $written = persistEventList($dataDir, $index, $chunks, $next, $stamp);
+    $written = persistEventsPromoted($dataDir, $index, $chunks, $next, $tasks, $nowMs, $stamp);
     echoCommandWrite($tasks, $index, $chunks, $written);
 }
 
@@ -2315,7 +2738,17 @@ function handleDelete(string $dataDir): void
             break;
         }
     }
-    $written = persistCommandWrites($dataDir, $index, $dirty, $stamp);
+    $overlay = mergeOverlay($chunks, $dirty);
+    $nowMs = commandMs(commandNow());
+    $written = persistEventsPromoted(
+        $dataDir,
+        $index,
+        $chunks,
+        allEvents($overlay),
+        $tasks,
+        $nowMs,
+        $stamp,
+    );
     echoCommandWrite($tasks, $index, $chunks, $written);
 }
 
@@ -2374,7 +2807,7 @@ function handleAdd(string $dataDir): void
         $stamp,
     );
     $next[] = $ev;
-    $written = persistEventList($dataDir, $index, $chunks, $next, $stamp);
+    $written = persistEventsPromoted($dataDir, $index, $chunks, $next, $tasks, $nowMs, $stamp);
     echoCommandWrite($tasks, $index, $chunks, $written);
 }
 
@@ -2459,7 +2892,16 @@ function handleJoin(string $dataDir): void
     $newer['startedAt'] = $iso;
     $newer['updatedAt'] = $stamp;
     $dirty = upsertEvents($chunks, [$older, $newer], $stamp);
-    $written = persistCommandWrites($dataDir, $index, $dirty, $stamp);
+    $overlay = mergeOverlay($chunks, $dirty);
+    $written = persistEventsPromoted(
+        $dataDir,
+        $index,
+        $chunks,
+        allEvents($overlay),
+        $tasks,
+        $nowMs,
+        $stamp,
+    );
     echoCommandWrite($tasks, $index, $chunks, $written, ['boundary' => $iso]);
 }
 
@@ -2745,7 +3187,16 @@ function handleTaskDelete(string $dataDir): void
     if ($open !== null && ($open['taskId'] ?? null) === $taskId) {
         $dirty = closeOpenAcrossChunks($chunks, $endMs, $stamp, (string) $open['id']);
         if ($dirty !== []) {
-            $written = persistCommandWrites($dataDir, $index, $dirty, $stamp);
+            $overlay = mergeOverlay($chunks, $dirty);
+            $written = persistEventsPromoted(
+                $dataDir,
+                $index,
+                $chunks,
+                allEvents($overlay),
+                $file,
+                $endMs,
+                $stamp,
+            );
         }
     }
 

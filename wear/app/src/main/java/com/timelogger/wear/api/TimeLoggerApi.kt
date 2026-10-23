@@ -45,10 +45,16 @@ class TimeLoggerApi(
         return json.optJSONArray("events").toEvents()
     }
 
-    fun start(taskId: String, at: String? = null, eventId: String? = null): CommandWrite {
+    fun start(
+        taskId: String,
+        at: String? = null,
+        eventId: String? = null,
+        hs: String? = null,
+    ): CommandWrite {
         val body = JSONObject().put("taskId", taskId)
         if (at != null) body.put("at", at)
         if (eventId != null) body.put("eventId", eventId)
+        if (hs != null) body.put("hs", hs)
         return parseWrite(request("POST", "start", body))
     }
 
@@ -58,9 +64,15 @@ class TimeLoggerApi(
         return parseWrite(request("POST", "signal-start", body))
     }
 
-    fun signalStop(eventId: String, at: String, resumeTaskId: String? = null): CommandWrite {
+    fun signalStop(
+        eventId: String,
+        at: String,
+        sleepTaskId: String? = null,
+        sleepPrepTaskId: String? = null,
+    ): CommandWrite {
         val body = JSONObject().put("eventId", eventId).put("at", at)
-        if (!resumeTaskId.isNullOrEmpty()) body.put("resumeTaskId", resumeTaskId)
+        if (!sleepTaskId.isNullOrEmpty()) body.put("sleepTaskId", sleepTaskId)
+        if (!sleepPrepTaskId.isNullOrEmpty()) body.put("sleepPrepTaskId", sleepPrepTaskId)
         return parseWrite(request("POST", "signal-stop", body))
     }
 
@@ -103,10 +115,11 @@ class TimeLoggerApi(
         return parseWrite(request("POST", "delete", JSONObject().put("eventId", eventId)))
     }
 
-    fun debug(message: String, detail: JSONObject? = null) {
-        val body = JSONObject().put("level", "info").put("message", message).put("ua", "TimeLogger-Wear")
-        if (detail != null) body.put("detail", detail)
-        request("POST", "debug", body)
+    fun debugEntries(entries: List<JSONObject>) {
+        if (entries.isEmpty()) return
+        val arr = JSONArray()
+        for (entry in entries) arr.put(entry)
+        request("POST", "debug", JSONObject().put("entries", arr).put("ua", "TimeLogger-Wear"))
     }
 
     fun mergeQueue(
@@ -120,7 +133,11 @@ class TimeLoggerApi(
                 .put("op", op.op)
                 .put("at", op.at)
                 .put("eventId", op.eventId)
-            if (op.op == "start") o.put("taskId", op.taskId)
+            if (op.op == "start") {
+                o.put("taskId", op.taskId)
+                if (op.hs != null) o.put("hs", op.hs)
+                if (op.startedBy != null) o.put("startedBy", op.startedBy)
+            }
             if (op.op == "state") o.put("state", op.state)
             arr.put(o)
         }

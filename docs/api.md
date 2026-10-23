@@ -36,11 +36,11 @@
 
 ### `POST start`
 
-Body: `{ "taskId": "…", "at?": "ISO", "eventId?": "…w" }`
+Body: `{ "taskId": "…", "at?": "ISO", "eventId?": "…w", "hs?": "ASLEEP|PASSIVE|EXERCISE|UNKNOWN" }`
 
 開いている記録をその時刻で閉じ、同時刻に開始する（後勝ち）。`at` 省略はサーバーのいま。2分以内の隙間は中点に丸める。名前と色は開始時点のスナップショット。
 
-任意の `eventId` はウォッチ採番。末尾 `w` 必須。既存 id と重複なら 400。無ければ本丸が振る。
+任意の `eventId` はウォッチ採番。末尾 `w` 必須。既存 id と重複なら 400。無ければ本丸が振る。`hs` はウォッチが入眠準備を開始したときの Health STATE。ブラウザ版は付けない。不正な値は 400。
 
 - 400 `taskId required` / `eventId` 不正・重複 / 時刻不正 / 未来すぎる
 - 404 タスクまたはフォルダが無い
@@ -66,15 +66,17 @@ Health の開始。`at` は必須。上書き関数に `until`＝サーバーの
 
 `POST cut-in` は同じ handler の別名。Wear がまだ `cut-in` を叩く。正本の名前は `signal-start`。
 
+できた行に `startedBy: "exercise"` を付ける。
+
 `POST start` とは別口。通常開始の意味は変えない。
 
 ### `POST signal-stop`
 
-Body: `{ "eventId": "…", "at": "ISO", "resumeTaskId?": "…" }`
+Body: `{ "eventId": "…", "at": "ISO", "sleepTaskId?": "…", "sleepPrepTaskId?": "…" }`
 
 Health の終了。指定行を `at` で閉じる。無い id は 404。既に閉じていたら **409 で終わり、再開しない**。
 
-閉じに成功し `resumeTaskId` があれば、そのタスクで `signal-start` と同じ上書き開始（`at`、`until`＝いま）。ウォッチが直前を渡す。本丸は覚えない。空なら閉じるだけ。
+閉じに成功したら、同じフォルダの連続をチェーンとみて、その外の項目を `at` から開始する（後発開始が勝つ）。外が睡眠なら入眠準備。ウォッチは直前の taskId を渡さない。`resumeTaskId` は見ない。再開した行に `startedBy: "resume"` を付ける。
 
 ### `POST merge-queue`
 
@@ -83,7 +85,7 @@ Body:
 ```json
 {
   "ops": [
-    { "op": "start", "taskId": "…", "at": "ISO", "eventId": "…w" },
+    { "op": "start", "taskId": "…", "at": "ISO", "eventId": "…w", "hs?": "ASLEEP|PASSIVE|EXERCISE|UNKNOWN", "startedBy?": "exercise" },
     { "op": "stop", "eventId": "…", "at": "ISO" },
     { "op": "state", "state": "ASLEEP|PASSIVE", "at": "ISO", "eventId": "…w" }
   ],
@@ -96,14 +98,14 @@ Body:
 
 - `ops` は 1 件以上、上限 256。空や上限超えは 400
 - `op` は `start` | `stop` | `state`
-- 開始は `taskId` `at` `eventId` すべて必須。`eventId` は末尾 `w`
+- 開始は `taskId` `at` `eventId` すべて必須。`eventId` は末尾 `w`。入眠準備開始なら `hs` を付ける。オフラインの運動開始だけ `startedBy: "exercise"`（他の値は 400）
 - 終了は `eventId` `at` 必須
-- `state` は `ASLEEP` | `PASSIVE`。`at` と `eventId`（末尾 `w`）必須。`taskId` は付けない。ログの行には残らない。`ASLEEP` は覆う行が入眠準備なら睡眠開始、`PASSIVE` は覆う行が睡眠なら入眠準備開始。でなければ何もしない。`start`/`stop` の一本線には混ぜない。`state` があるとき `sleepTaskId` と `sleepPrepTaskId` は必須
+- `state` は `ASLEEP` | `PASSIVE`。`at` と `eventId`（末尾 `w`）必須。`taskId` は付けない。ログの行には残らない。`ASLEEP` は覆う行が入眠準備なら睡眠開始（`startedBy: "asleep"`）、`PASSIVE` は覆う行が睡眠なら入眠準備開始（`startedBy: "passive"`）。でなければ何もしない。`start`/`stop` の一本線には混ぜない。`state` があるとき `sleepTaskId` と `sleepPrepTaskId` は必須
 - `commands.lock` を握ったまま 1 リクエストで終える
 - 成功の戻りに `skipped`（409 で飛ばした終了）を足す。1 件の 409 で全体は落とさない
 - 開始の 400/404 は全体失敗。無い終了 id は 404 で全体失敗
 
-キューの区間と重なる本体行だけを見る。接点では開始時刻が後の側が勝つ。負けた側の残りは穴（再開しない）。同じ側の連続は流し直さない。`sleepTaskId` と `sleepPrepTaskId` があるときだけ例外で、キューの睡眠は本体の入眠準備に負けない。入眠準備は載せず睡眠を続ける。休憩など他は今どおり後発が勝つ。両方省略時は従来どおり。`planOverwrite` をキューの各開始へかけない（12:00–15:00 のキューが 13:00–14:00 の本体を消さない。他機の終了済みを開始のたびに削らない）。はみ出した終了は 409 でその 1 件だけ飛ばす。穴は埋めない。スナップはかけない。
+キューの区間と重なる本体行だけを見る。接点では開始時刻が後の側が勝つ。負けた側の残りは穴（再開しない）。同じ側の連続は流し直さない。`sleepTaskId` と `sleepPrepTaskId` があるときだけ例外で、キューの睡眠は本体の入眠準備に負けない。入眠準備は載せず睡眠を続ける。休憩など他は今どおり後発が勝つ。両方省略時は従来どおり。`planOverwrite` をキューの各開始へかけない（12:00–15:00 のキューが 13:00–14:00 の本体を消さない。他機の終了済みを開始のたびに削らない）。はみ出した終了は 409 でその 1 件だけ飛ばす。キューの最後が閉じた運動なら、同じフォルダの連続の外をその終了時刻から開始する（後発が勝つ）。スナップはかけない。
 
 ### `POST stop`
 
@@ -217,7 +219,11 @@ Body は当該 JSON ファイル全体。PUT 成功は `{ "ok": true, "updatedAt
 
 ### `debug`
 
-- `POST debug` `{ level, message, detail? }` → `data/debug.log` に JSONL 追記
+追記専用。記録の merge では消さない。
+
+- `POST debug` `{ level, message, detail?, at?, ua? }` → `data/debug.log` に JSONL 1 行
+- `POST debug` `{ entries: [{ level, message, detail?, at?, ua? }, …], ua? }` → 複数行。最大 100
+- `at` があれば端末の発生時刻を正とする。無ければサーバーのいま（ブラウザ版）
 - `GET debug` ログ全文（無ければ空）。Content-Type は text
 
 ---
@@ -259,8 +265,21 @@ Body は当該 JSON ファイル全体。PUT 成功は `{ "ok": true, "updatedAt
   "startedAt": "2026-09-18T11:06:01.000+09:00",
   "endedAt": null,
   "createdAt": "…",
-  "updatedAt": "…"
+  "updatedAt": "…",
+  "startedBy": "asleep",
+  "hs": "ASLEEP"
 }
 ```
 
 `endedAt` が `null` なら記録中。同時に複数は持たない（壊れていたら start がまとめて閉じる）。
+
+任意欄:
+
+- `startedBy` は自動開始だけ。ユーザーが押した開始には付けない。値は `asleep`（STATE ASLEEP で睡眠開始） / `passive`（STATE PASSIVE で入眠準備開始） / `exercise`（運動開始） / `resume`（チェーンの直前再開） / `prep`（下の後処理で入眠準備から直した睡眠）
+- `hs` はウォッチが入眠準備を開始したときの Health STATE。`ASLEEP` | `PASSIVE` | `EXERCISE` | `UNKNOWN`
+
+記録を書いたあと（start / stop / signal-* / merge-queue / overwrite / update / add / join / delete、および記録中の task-delete）、閉じた入眠準備を見て睡眠に直す。開いている間は触らない。次をすべて満たすとき、入眠準備は開始から 5 分で閉じ、その 5 分後から元の終了までを睡眠（`startedBy: "prep"`）にする。
+
+1. `startedBy` が無い（ユーザー開始）。かつ、開始時 `hs` が `ASLEEP`、またはブラウザ版開始（id が末尾 `w` でない）。自動開始（運動終了の再開、STATE、運動）は `startedBy` があるので対象外。id がウォッチでないことだけではブラウザとみなさない
+2. その入眠準備が 30 分以上
+3. 時系列で一つ後が睡眠ではない

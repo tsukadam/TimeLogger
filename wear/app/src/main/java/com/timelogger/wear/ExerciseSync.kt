@@ -121,10 +121,12 @@ object ExerciseSync {
         Handler(Looper.getMainLooper()).post(cb)
     }
 
-    fun dropHsSession(context: Context) {
+    fun dropHsIfEvent(context: Context, eventId: String) {
         val app = context.applicationContext
-        timerLog(app, "w", "logger tap: forget resume", JSONObject())
-        ExerciseSyncStore(app).forgetResume()
+        val store = ExerciseSyncStore(app)
+        if (store.exerciseEventId() != eventId) return
+        timerLog(app, "w", "take over hs event", JSONObject().put("eventId", eventId))
+        store.forgetResume()
     }
 
     @Synchronized
@@ -242,6 +244,16 @@ object ExerciseSync {
             timerLog(app, "w", "A fire skip: hs=$last", JSONObject().put("onAt", isoMs(onAt)))
             return
         }
+        val worn = OffBody.sampleWorn(app)
+        if (worn == false) {
+            timerLog(
+                app,
+                "w",
+                "A fire skip: off body",
+                JSONObject().put("onAt", isoMs(onAt)).put("worn", false),
+            )
+            return
+        }
         if (ExerciseBindingsStore.get(app).taskIdFor(ExerciseTypes.SLEEP_ID) == null) {
             timerLog(app, "e", "A fire: SLEEP unbound", JSONObject().put("onAt", isoMs(onAt)))
             return
@@ -305,6 +317,16 @@ object ExerciseSync {
         signal: ExerciseSignal,
     ) {
         store.setLastFingerprint(signal.fingerprint)
+        val worn = OffBody.sampleWorn(context)
+        if (worn == false) {
+            timerLog(
+                context,
+                "w",
+                "A skip: off body",
+                JSONObject().put("at", isoMs(signal.atMs)).put("worn", false),
+            )
+            return
+        }
         startTimer(context, TIMER_ENTER, signal.atMs)
     }
 
@@ -315,10 +337,8 @@ object ExerciseSync {
         taskId: String,
         kind: String,
     ) {
-        val repo = RecordRepository.get(context)
-        val prev = repo.peekPrevTaskId()
-        val eventId = repo.signalStart(taskId, signal.atMs)
-        store.setSession(prev, eventId, signal.fingerprint, kind)
+        val eventId = RecordRepository.get(context).signalStart(taskId, signal.atMs)
+        store.setSession(null, eventId, signal.fingerprint, kind)
         notifyUi()
     }
 
@@ -352,9 +372,8 @@ object ExerciseSync {
             notifyUi()
             return
         }
-        val prev = store.prevTaskId()
         try {
-            repo.signalStop(eventId, atMs, prev)
+            repo.signalStop(eventId, atMs)
         } catch (e: ApiException) {
             if (e.status != 409 && e.status != 404) throw e
         }

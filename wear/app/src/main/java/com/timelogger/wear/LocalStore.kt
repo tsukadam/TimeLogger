@@ -230,6 +230,8 @@ internal class LocalStore(context: Context) {
                         startedAt = o.optString("startedAt").takeIf { it.isNotEmpty() },
                         endedAt = o.optString("endedAt").takeIf { it.isNotEmpty() },
                         state = o.optString("state").takeIf { it.isNotEmpty() },
+                        hs = o.optString("hs").takeIf { it.isNotEmpty() },
+                        startedBy = o.optString("startedBy").takeIf { it.isNotEmpty() },
                     ),
                 )
             }
@@ -257,6 +259,8 @@ internal class LocalStore(context: Context) {
             if (op.startedAt != null) o.put("startedAt", op.startedAt)
             if (op.endedAt != null) o.put("endedAt", op.endedAt)
             if (op.state != null) o.put("state", op.state)
+            if (op.hs != null) o.put("hs", op.hs)
+            if (op.startedBy != null) o.put("startedBy", op.startedBy)
             arr.put(o)
         }
         val json = JSONObject().put("ops", arr)

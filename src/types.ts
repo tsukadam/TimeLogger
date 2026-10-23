@@ -109,6 +109,14 @@ export type Event = {
   endedAt: string | null
   createdAt: string
   updatedAt: string
+  /**
+   * 自動開始だけ。ユーザーが押した開始には付けない。
+   * asleep/passive = Health STATE、exercise = 運動開始、resume = チェーンの直前再開、
+   * prep = 閉じた入眠準備を後から睡眠に直したもの。
+   */
+  startedBy?: 'asleep' | 'passive' | 'exercise' | 'resume' | 'prep'
+  /** ウォッチで入眠準備を開始したときの Health STATE。ブラウザ開始には無い。 */
+  hs?: 'ASLEEP' | 'PASSIVE' | 'EXERCISE' | 'UNKNOWN'
 }
 
 export type EventsFile = {

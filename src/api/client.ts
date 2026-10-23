@@ -350,7 +350,8 @@ export function postCutIn(body: {
 export function postSignalStop(body: {
   eventId: string
   at: string
-  resumeTaskId?: string
+  sleepTaskId?: string
+  sleepPrepTaskId?: string
 }): Promise<CommandWriteResult> {
   return postCommand('signal-stop', body)
 }
